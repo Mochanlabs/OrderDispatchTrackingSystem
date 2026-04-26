@@ -1,0 +1,349 @@
+<%- include('../partials/header') %>
+
+<script src="https://cdn.jsdelivr.net/npm/react@18/umd/react.development.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/react-dom@18/umd/react-dom.development.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/@babel/standalone/babel.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
+
+<div class="d-flex align-items-center justify-content-between mb-3">
+  <nav aria-label="breadcrumb">
+    <ol class="breadcrumb mb-0">
+      <li class="breadcrumb-item"><a href="/dashboard">Dashboard</a></li>
+      <li class="breadcrumb-item"><a href="#">Master Data</a></li>
+      <li class="breadcrumb-item active">Locations</li>
+    </ol>
+  </nav>
+</div>
+
+<div id="coderef-root"></div>
+
+<script type="text/babel">
+const { useState, useEffect } = React;
+
+const EMPTY_FORM = {
+  code_type: '',
+  code: '',
+  code_label: '',
+  code_desc: '',
+  code_sort_order: '',
+  is_active: true,
+};
+
+function Toast({ msg, type, onClose }) {
+  if (!msg) return null;
+  return (
+    <div className={`alert alert-${type} alert-dismissible d-flex align-items-center`} role="alert">
+      <span>{msg}</span>
+      <button type="button" className="btn-close ms-auto" onClick={onClose}></button>
+    </div>
+  );
+}
+
+function CodeReferenceApp() {
+  const [rows, setRows]           = useState([]);
+  const [codeTypes, setCodeTypes] = useState([]);
+  const [loading, setLoading]     = useState(true);
+  const [search, setSearch]       = useState('');
+  const [typeFilter, setTypeFilter] = useState('ALL');
+  const [showModal, setShowModal] = useState(false);
+  const [form, setForm]           = useState(EMPTY_FORM);
+  const [editId, setEditId]       = useState(null);
+  const [saving, setSaving]       = useState(false);
+  const [toast, setToast]         = useState({ msg: '', type: 'success' });
+  const [sortCol, setSortCol]     = useState('code_type');
+  const [sortAsc, setSortAsc]     = useState(true);
+
+  const showToast = (msg, type = 'success') => {
+    setToast({ msg, type });
+    setTimeout(() => setToast({ msg: '', type: 'success' }), 4000);
+  };
+
+  const fetchTypes = async () => {
+    try {
+      const r = await fetch('/api/code-reference/types');
+      if (r.ok) setCodeTypes(await r.json());
+    } catch (_) {}
+  };
+
+  const fetchRows = async () => {
+    setLoading(true);
+    try {
+      const r = await fetch('/api/code-reference');
+      if (!r.ok) throw new Error(await r.text());
+      setRows(await r.json());
+    } catch (e) {
+      showToast('Failed to load data: ' + e.message, 'danger');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  useEffect(() => { fetchTypes(); fetchRows(); }, []);
+
+  const exportExcel = () => {
+    const data = filtered.map(r => ({
+      'ID': r.id,
+      'Code Type': r.code_type,
+      'Code': r.code,
+      'Label': r.code_label,
+      'Description': r.code_desc || '',
+      'Sort Order': r.code_sort_order ?? '',
+      'Active': r.is_active ? 'Yes' : 'No',
+    }));
+    const ws = XLSX.utils.json_to_sheet(data);
+    const wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, ws, 'Locations');
+    XLSX.writeFile(wb, 'Locations_CodeReference.xlsx');
+  };
+
+  const openAdd = () => { setForm(EMPTY_FORM); setEditId(null); setShowModal(true); };
+
+  const openEdit = (row) => {
+    setForm({
+      code_type:      row.code_type,
+      code:           row.code,
+      code_label:     row.code_label,
+      code_desc:      row.code_desc || '',
+      code_sort_order: row.code_sort_order ?? '',
+      is_active:      row.is_active !== false,
+    });
+    setEditId(row.id);
+    setShowModal(true);
+  };
+
+  const handleSave = async (e) => {
+    e.preventDefault();
+    if (!form.code_type.trim() || !form.code.trim() || !form.code_label.trim())
+      return showToast('Code Type, Code and Label are required', 'warning');
+    setSaving(true);
+    try {
+      const url    = editId ? `/api/code-reference/${editId}` : '/api/code-reference';
+      const method = editId ? 'PUT' : 'POST';
+      const res = await fetch(url, {
+        method,
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(form),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || 'Save failed');
+      showToast(editId ? 'Entry updated successfully' : 'Entry added successfully');
+      setShowModal(false);
+      fetchRows();
+      fetchTypes();
+    } catch (e) {
+      showToast(e.message, 'danger');
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const handleSort = (col) => {
+    if (sortCol === col) setSortAsc(!sortAsc);
+    else { setSortCol(col); setSortAsc(true); }
+  };
+
+  const SortIcon = ({ col }) => {
+    if (sortCol !== col) return <span className="text-muted ms-1">⇅</span>;
+    return <span className="ms-1">{sortAsc ? '↑' : '↓'}</span>;
+  };
+
+  const filtered = rows
+    .filter(r => {
+      const matchType = typeFilter === 'ALL' || r.code_type === typeFilter;
+      const matchSearch = (r.code_type + ' ' + r.code + ' ' + r.code_label + ' ' + (r.code_desc || ''))
+        .toLowerCase().includes(search.toLowerCase());
+      return matchType && matchSearch;
+    })
+    .sort((a, b) => {
+      let va = a[sortCol] ?? '', vb = b[sortCol] ?? '';
+      if (typeof va === 'string') va = va.toLowerCase();
+      if (typeof vb === 'string') vb = vb.toLowerCase();
+      if (va < vb) return sortAsc ? -1 : 1;
+      if (va > vb) return sortAsc ?  1 : -1;
+      return 0;
+    });
+
+  return (
+    <div>
+      <Toast msg={toast.msg} type={toast.type} onClose={() => setToast({ msg: '' })} />
+
+      <div className="card shadow-sm">
+        <div className="card-header bg-white d-flex align-items-center justify-content-between py-3">
+          <h5 className="mb-0 fw-semibold">📍 Locations (Code Reference)</h5>
+          <div className="d-flex gap-2">
+            <button className="btn btn-outline-success btn-sm" onClick={exportExcel}>
+              ⬇️ Download Excel
+            </button>
+            <button className="btn btn-primary btn-sm" onClick={openAdd}>
+              + Add Entry
+            </button>
+          </div>
+        </div>
+
+        <div className="card-body">
+          <div className="row mb-3 g-2">
+            <div className="col-md-3">
+              <input
+                className="form-control"
+                placeholder="Search by code type, code, label…"
+                value={search}
+                onChange={e => setSearch(e.target.value)}
+              />
+            </div>
+            <div className="col-md-3">
+              <select className="form-select" value={typeFilter} onChange={e => setTypeFilter(e.target.value)}>
+                <option value="ALL">All Code Types</option>
+                {codeTypes.map(t => <option key={t} value={t}>{t}</option>)}
+              </select>
+            </div>
+            <div className="col-md-6 text-end text-muted small align-self-center">
+              {filtered.length} record{filtered.length !== 1 ? 's' : ''}
+            </div>
+          </div>
+
+          {loading ? (
+            <div className="text-center py-5">
+              <div className="spinner-border text-primary" role="status"></div>
+              <div className="mt-2 text-muted">Loading…</div>
+            </div>
+          ) : (
+            <div className="table-responsive">
+              <table className="table table-hover table-bordered align-middle mb-0">
+                <thead className="table-light">
+                  <tr>
+                    <th style={{ width: 60 }}>ID</th>
+                    <th style={{ cursor: 'pointer' }} onClick={() => handleSort('code_type')}>Code Type <SortIcon col="code_type" /></th>
+                    <th style={{ cursor: 'pointer', width: 120 }} onClick={() => handleSort('code')}>Code <SortIcon col="code" /></th>
+                    <th style={{ cursor: 'pointer' }} onClick={() => handleSort('code_label')}>Label <SortIcon col="code_label" /></th>
+                    <th>Description</th>
+                    <th style={{ width: 100, textAlign: 'center', cursor: 'pointer' }} onClick={() => handleSort('code_sort_order')}>Sort Order <SortIcon col="code_sort_order" /></th>
+                    <th style={{ width: 100, textAlign: 'center' }}>Status</th>
+                    <th style={{ width: 90, textAlign: 'center' }}>Action</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {filtered.length === 0 ? (
+                    <tr><td colSpan="8" className="text-center text-muted py-4">No entries found</td></tr>
+                  ) : filtered.map(r => (
+                    <tr key={r.id}>
+                      <td className="text-muted small">{r.id}</td>
+                      <td><span className="badge bg-secondary">{r.code_type}</span></td>
+                      <td className="fw-semibold">{r.code}</td>
+                      <td>{r.code_label}</td>
+                      <td className="text-muted small">{r.code_desc || <span className="text-muted">—</span>}</td>
+                      <td className="text-center">{r.code_sort_order ?? <span className="text-muted">—</span>}</td>
+                      <td className="text-center">
+                        {r.is_active !== false
+                          ? <span className="badge bg-success">Active</span>
+                          : <span className="badge bg-secondary">Inactive</span>}
+                      </td>
+                      <td className="text-center">
+                        <button className="btn btn-outline-primary btn-sm" onClick={() => openEdit(r)}>Edit</button>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
+        </div>
+      </div>
+
+      {/* Add / Edit Modal */}
+      {showModal && (
+        <div className="modal d-block" tabIndex="-1" style={{ background: 'rgba(0,0,0,0.45)' }}>
+          <div className="modal-dialog modal-dialog-centered">
+            <div className="modal-content">
+              <form onSubmit={handleSave}>
+                <div className="modal-header">
+                  <h5 className="modal-title">{editId ? 'Edit Entry' : 'Add Entry'}</h5>
+                  <button type="button" className="btn-close" onClick={() => setShowModal(false)}></button>
+                </div>
+                <div className="modal-body">
+                  <div className="mb-3">
+                    <label className="form-label fw-semibold">Code Type <span className="text-danger">*</span></label>
+                    <input
+                      className="form-control"
+                      list="codeTypeList"
+                      value={form.code_type}
+                      onChange={e => setForm({ ...form, code_type: e.target.value })}
+                      placeholder="e.g. loading_location"
+                      required
+                    />
+                    <datalist id="codeTypeList">
+                      {codeTypes.map(t => <option key={t} value={t} />)}
+                    </datalist>
+                    <div className="form-text">Use an existing type or type a new one.</div>
+                  </div>
+                  <div className="mb-3">
+                    <label className="form-label fw-semibold">Code <span className="text-danger">*</span></label>
+                    <input
+                      className="form-control"
+                      value={form.code}
+                      onChange={e => setForm({ ...form, code: e.target.value })}
+                      placeholder="e.g. LOC001"
+                      required
+                    />
+                  </div>
+                  <div className="mb-3">
+                    <label className="form-label fw-semibold">Label <span className="text-danger">*</span></label>
+                    <input
+                      className="form-control"
+                      value={form.code_label}
+                      onChange={e => setForm({ ...form, code_label: e.target.value })}
+                      placeholder="e.g. Mumbai Godown"
+                      required
+                    />
+                  </div>
+                  <div className="mb-3">
+                    <label className="form-label fw-semibold">Description</label>
+                    <textarea
+                      className="form-control"
+                      rows="2"
+                      value={form.code_desc}
+                      onChange={e => setForm({ ...form, code_desc: e.target.value })}
+                      placeholder="Optional description"
+                    />
+                  </div>
+                  <div className="mb-3">
+                    <label className="form-label fw-semibold">Sort Order</label>
+                    <input
+                      type="number"
+                      className="form-control"
+                      value={form.code_sort_order}
+                      onChange={e => setForm({ ...form, code_sort_order: e.target.value })}
+                      placeholder="e.g. 1"
+                    />
+                  </div>
+                  <div className="form-check form-switch">
+                    <input
+                      className="form-check-input"
+                      type="checkbox"
+                      id="codeActiveFlag"
+                      checked={form.is_active}
+                      onChange={e => setForm({ ...form, is_active: e.target.checked })}
+                    />
+                    <label className="form-check-label" htmlFor="codeActiveFlag">Active</label>
+                  </div>
+                </div>
+                <div className="modal-footer">
+                  <button type="button" className="btn btn-secondary" onClick={() => setShowModal(false)}>Cancel</button>
+                  <button type="submit" className="btn btn-primary" disabled={saving}>
+                    {saving && <span className="spinner-border spinner-border-sm me-1"></span>}
+                    {editId ? 'Update' : 'Add Entry'}
+                  </button>
+                </div>
+              </form>
+            </div>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+const root = ReactDOM.createRoot(document.getElementById('coderef-root'));
+root.render(<CodeReferenceApp />);
+</script>
+
+<%- include('../partials/footer') %>

@@ -1,0 +1,335 @@
+/* ═══════════════════════════════════════════════════════════
+   ODTS — Design System  (Deep Navy + Amber accent)
+   ═══════════════════════════════════════════════════════════ */
+
+/* ── CSS Variables ────────────────────────────────────────── */
+:root {
+  --navy:        #0f2544;
+  --navy-mid:    #1a3a6b;
+  --navy-light:  #1e4d8c;
+  --amber:       #f59e0b;
+  --amber-light: #fbbf24;
+  --teal:        #0ea5e9;
+  --bg:          #eef2f7;
+  --surface:     #ffffff;
+  --text:        #1e293b;
+  --muted:       #64748b;
+  --border:      #e2e8f0;
+  --success:     #10b981;
+  --danger:      #ef4444;
+  --warning:     #f59e0b;
+  --radius:      10px;
+  --shadow-sm:   0 2px 8px rgba(15,37,68,.08);
+  --shadow-md:   0 4px 20px rgba(15,37,68,.13);
+  --transition:  .18s ease;
+}
+
+/* ── Base ─────────────────────────────────────────────────── */
+*, *::before, *::after { box-sizing: border-box; }
+
+body {
+  background: var(--bg);
+  color: var(--text);
+  font-family: 'Segoe UI', system-ui, -apple-system, sans-serif;
+  font-size: .925rem;
+  min-height: 100vh;
+}
+
+a { color: var(--navy-light); }
+a:hover { color: var(--amber); }
+
+/* ── Navbar ───────────────────────────────────────────────── */
+.odts-navbar {
+  background: linear-gradient(100deg, var(--navy) 0%, var(--navy-mid) 60%, var(--navy-light) 100%);
+  box-shadow: 0 3px 16px rgba(15,37,68,.35);
+  padding: .6rem 0;
+}
+
+.odts-navbar .navbar-brand {
+  font-weight: 700;
+  font-size: 1.05rem;
+  letter-spacing: .3px;
+  color: #fff !important;
+  display: flex;
+  align-items: center;
+  gap: .5rem;
+}
+
+.odts-navbar .navbar-brand .brand-icon {
+  width: 34px; height: 34px;
+  background: var(--amber);
+  border-radius: 8px;
+  display: flex; align-items: center; justify-content: center;
+  font-size: 1rem;
+  flex-shrink: 0;
+}
+
+.odts-navbar .nav-link {
+  color: rgba(255,255,255,.82) !important;
+  font-size: .875rem;
+  font-weight: 500;
+  padding: .42rem .75rem !important;
+  border-radius: 6px;
+  transition: background var(--transition), color var(--transition);
+}
+.odts-navbar .nav-link:hover,
+.odts-navbar .nav-link.active { color: #fff !important; background: rgba(255,255,255,.12); }
+
+.odts-navbar .dropdown-menu {
+  border: none;
+  border-radius: var(--radius);
+  box-shadow: var(--shadow-md);
+  padding: .4rem;
+  min-width: 210px;
+}
+.odts-navbar .dropdown-item {
+  border-radius: 6px;
+  padding: .45rem .85rem;
+  font-size: .875rem;
+  color: var(--text);
+  transition: background var(--transition);
+}
+.odts-navbar .dropdown-item:hover { background: var(--bg); color: var(--navy); }
+.odts-navbar .dropdown-divider { margin: .3rem 0; }
+
+/* User pill */
+.odts-navbar .user-pill .nav-link {
+  background: rgba(255,255,255,.12);
+  border-radius: 20px;
+  padding: .35rem 1rem !important;
+}
+.odts-navbar .user-pill .nav-link:hover { background: rgba(255,255,255,.22); }
+
+/* Role badge in navbar */
+.odts-navbar .badge-role {
+  background: var(--amber);
+  color: var(--navy);
+  font-size: .68rem;
+  font-weight: 700;
+  padding: .2em .55em;
+  border-radius: 20px;
+  letter-spacing: .4px;
+}
+
+/* Navbar toggler */
+.odts-navbar .navbar-toggler { border-color: rgba(255,255,255,.3); }
+.odts-navbar .navbar-toggler-icon { filter: invert(1); }
+
+/* ── Page wrapper ─────────────────────────────────────────── */
+.page-main { padding: 1.5rem 0 3rem; }
+
+/* ── Cards ────────────────────────────────────────────────── */
+.card {
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  box-shadow: var(--shadow-sm);
+  background: var(--surface);
+  transition: box-shadow var(--transition), transform var(--transition);
+}
+.card:hover { box-shadow: var(--shadow-md); }
+
+.card-header {
+  border-radius: var(--radius) var(--radius) 0 0 !important;
+  border-bottom: 1px solid var(--border);
+  font-weight: 600;
+  font-size: .9rem;
+  padding: .85rem 1.1rem;
+}
+
+/* coloured left-accent shorthand */
+.card-accent-blue   { border-left: 4px solid var(--navy-light) !important; }
+.card-accent-green  { border-left: 4px solid var(--success) !important; }
+.card-accent-amber  { border-left: 4px solid var(--amber) !important; }
+.card-accent-red    { border-left: 4px solid var(--danger) !important; }
+.card-accent-teal   { border-left: 4px solid var(--teal) !important; }
+.card-accent-purple { border-left: 4px solid #7c3aed !important; }
+
+/* dashboard quick-link cards */
+.dash-card {
+  cursor: pointer;
+  text-decoration: none !important;
+  display: block;
+}
+.dash-card .card {
+  border-left: 4px solid transparent;
+  transition: box-shadow var(--transition), transform var(--transition), border-color var(--transition);
+}
+.dash-card:hover .card {
+  transform: translateY(-3px);
+  box-shadow: var(--shadow-md);
+}
+.dash-card .card-icon {
+  width: 46px; height: 46px;
+  border-radius: 10px;
+  display: flex; align-items: center; justify-content: center;
+  font-size: 1.4rem;
+  flex-shrink: 0;
+}
+
+/* welcome banner */
+.welcome-banner {
+  background: linear-gradient(120deg, var(--navy) 0%, var(--navy-light) 100%);
+  color: #fff;
+  border-radius: var(--radius);
+  padding: 1.5rem 1.75rem;
+  box-shadow: var(--shadow-md);
+  border: none;
+}
+.welcome-banner .avatar-circle {
+  width: 54px; height: 54px;
+  background: rgba(255,255,255,.18);
+  border-radius: 50%;
+  display: flex; align-items: center; justify-content: center;
+  font-size: 1.6rem;
+  flex-shrink: 0;
+}
+.welcome-banner .role-tag {
+  display: inline-block;
+  background: var(--amber);
+  color: var(--navy);
+  font-size: .72rem;
+  font-weight: 700;
+  padding: .2em .7em;
+  border-radius: 20px;
+  letter-spacing: .4px;
+  margin-top: .35rem;
+}
+
+/* section label */
+.section-label {
+  font-size: .72rem;
+  font-weight: 700;
+  letter-spacing: 1.2px;
+  text-transform: uppercase;
+  color: var(--muted);
+  margin: .25rem 0 .1rem;
+}
+
+/* ── Buttons ──────────────────────────────────────────────── */
+.btn {
+  border-radius: 7px;
+  font-weight: 500;
+  font-size: .875rem;
+  transition: all var(--transition);
+}
+.btn-primary {
+  background: var(--navy-light);
+  border-color: var(--navy-light);
+}
+.btn-primary:hover { background: var(--navy-mid); border-color: var(--navy-mid); }
+
+.btn-amber {
+  background: var(--amber);
+  border-color: var(--amber);
+  color: var(--navy);
+}
+.btn-amber:hover { background: var(--amber-light); border-color: var(--amber-light); color: var(--navy); }
+
+.btn-outline-primary {
+  color: var(--navy-light);
+  border-color: var(--navy-light);
+}
+.btn-outline-primary:hover { background: var(--navy-light); color: #fff; }
+
+/* ── Tables ───────────────────────────────────────────────── */
+.table { font-size: .85rem; }
+.table th {
+  font-size: .72rem;
+  font-weight: 700;
+  letter-spacing: .8px;
+  text-transform: uppercase;
+  color: var(--muted);
+  background: #f8fafc;
+  border-bottom: 2px solid var(--border);
+  padding: .65rem .8rem;
+  white-space: nowrap;
+}
+.table td { padding: .55rem .8rem; vertical-align: middle; color: var(--text); }
+.table-hover tbody tr:hover { background: #f0f7ff; }
+.table-responsive { border-radius: 0 0 var(--radius) var(--radius); }
+
+/* ── Badges ───────────────────────────────────────────────── */
+.badge { font-weight: 600; font-size: .72rem; padding: .3em .65em; border-radius: 6px; }
+
+/* Override Bootstrap colour classes we need */
+.bg-primary   { background-color: var(--navy-light) !important; }
+.bg-secondary { background-color: #64748b !important; }
+.bg-success   { background-color: var(--success) !important; }
+.bg-danger    { background-color: var(--danger) !important; }
+.bg-warning   { background-color: var(--amber) !important; color: var(--navy) !important; }
+.bg-info      { background-color: var(--teal) !important; }
+
+/* ── Forms ────────────────────────────────────────────────── */
+.form-control, .form-select {
+  border-radius: 7px;
+  border-color: var(--border);
+  font-size: .875rem;
+  transition: border-color var(--transition), box-shadow var(--transition);
+}
+.form-control:focus, .form-select:focus {
+  border-color: var(--navy-light);
+  box-shadow: 0 0 0 3px rgba(30,77,140,.15);
+}
+.form-label { font-weight: 600; font-size: .82rem; color: var(--text); margin-bottom: .3rem; }
+
+/* ── Sign-in page ─────────────────────────────────────────── */
+.signin-wrapper {
+  min-height: 100vh;
+  background: linear-gradient(135deg, var(--navy) 0%, var(--navy-light) 55%, #1e6091 100%);
+  display: flex; align-items: center; justify-content: center;
+  padding: 2rem 1rem;
+}
+.signin-card {
+  width: 100%;
+  max-width: 440px;
+  background: var(--surface);
+  border-radius: 16px;
+  box-shadow: 0 24px 64px rgba(15,37,68,.4);
+  overflow: hidden;
+}
+.signin-card .signin-header {
+  background: linear-gradient(120deg, var(--navy) 0%, var(--navy-mid) 100%);
+  padding: 2rem 2rem 1.5rem;
+  text-align: center;
+  color: #fff;
+}
+.signin-card .signin-header .logo-box {
+  width: 60px; height: 60px;
+  background: var(--amber);
+  border-radius: 14px;
+  margin: 0 auto .75rem;
+  display: flex; align-items: center; justify-content: center;
+  font-size: 1.8rem;
+}
+.signin-card .signin-header h1 {
+  font-size: 1.15rem; font-weight: 700; margin: 0 0 .2rem;
+}
+.signin-card .signin-header p {
+  font-size: .8rem; opacity: .75; margin: 0;
+}
+.signin-card .signin-body { padding: 2rem; }
+
+/* ── Breadcrumb ───────────────────────────────────────────── */
+.breadcrumb { font-size: .82rem; background: transparent; padding: 0; margin: 0; }
+.breadcrumb-item a { color: var(--navy-light); text-decoration: none; }
+.breadcrumb-item a:hover { color: var(--amber); }
+.breadcrumb-item.active { color: var(--muted); }
+.breadcrumb-item + .breadcrumb-item::before { color: var(--border); }
+
+/* ── Alert ────────────────────────────────────────────────── */
+.alert { border-radius: var(--radius); border: none; font-size: .875rem; }
+.alert-danger { background: #fef2f2; color: #991b1b; }
+.alert-success { background: #f0fdf4; color: #166534; }
+
+/* ── Scrollbar (webkit) ───────────────────────────────────── */
+::-webkit-scrollbar { width: 6px; height: 6px; }
+::-webkit-scrollbar-track { background: var(--bg); }
+::-webkit-scrollbar-thumb { background: #cbd5e1; border-radius: 4px; }
+::-webkit-scrollbar-thumb:hover { background: #94a3b8; }
+
+/* ── Utility ─────────────────────────────────────────────── */
+.text-navy { color: var(--navy) !important; }
+.text-amber { color: var(--amber) !important; }
+.fw-600 { font-weight: 600; }
+.rounded-lg { border-radius: var(--radius) !important; }
+

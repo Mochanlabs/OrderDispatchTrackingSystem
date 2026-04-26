@@ -1,0 +1,339 @@
+<%- include('../partials/header') %>
+
+<script src="https://cdn.jsdelivr.net/npm/react@18/umd/react.development.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/react-dom@18/umd/react-dom.development.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/@babel/standalone/babel.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
+
+<div class="d-flex justify-content-between align-items-center mb-3">
+  <nav aria-label="breadcrumb">
+    <ol class="breadcrumb mb-0">
+      <li class="breadcrumb-item"><a href="/dashboard">Dashboard</a></li>
+      <li class="breadcrumb-item active">User Sessions & Audit</li>
+    </ol>
+  </nav>
+</div>
+
+<div id="app"></div>
+
+<script type="text/babel">
+const { useState, useEffect, useCallback } = React;
+
+// ── helpers ──────────────────────────────────────────────────────────────────
+function fmtDt(iso) {
+  if (!iso) return '—';
+  return new Date(iso).toLocaleString('en-IN', { dateStyle: 'short', timeStyle: 'short' });
+}
+function fmtSecs(s) {
+  if (s == null) return '—';
+  const h = Math.floor(s / 3600), m = Math.floor((s % 3600) / 60), ss = s % 60;
+  if (h > 0) return `${h}h ${m}m`;
+  if (m > 0) return `${m}m ${ss}s`;
+  return `${ss}s`;
+}
+function roleBadge(role) {
+  const map = { ADMIN:'danger', DEALER:'primary', DISPATCHER:'warning', SALES_OFFICER:'info', OFFICE_EXECUTIVE:'secondary' };
+  return <span className={`badge bg-${map[role]||'secondary'}`}>{role||'—'}</span>;
+}
+function statusBadge(s) {
+  return <span className={`badge ${s==='SUCCESS'?'bg-success':'bg-danger'}`}>{s}</span>;
+}
+function methodBadge(m) {
+  return <span className={`badge ${m==='OTP'?'bg-info text-dark':'bg-secondary'}`}>{m}</span>;
+}
+
+// ── Active Sessions Panel ────────────────────────────────────────────────────
+function ActiveSessions() {
+  const [rows, setRows]       = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError]     = useState(null);
+  const [ts, setTs]           = useState(new Date());
+
+  const load = useCallback(() => {
+    setLoading(true);
+    fetch('/api/admin/active-sessions')
+      .then(r => r.json())
+      .then(d => { if (d.success) setRows(d.rows); else setError(d.error); })
+      .catch(e => setError(e.message))
+      .finally(() => { setLoading(false); setTs(new Date()); });
+  }, []);
+
+  useEffect(() => { load(); const t = setInterval(load, 30000); return () => clearInterval(t); }, [load]);
+
+  function exportExcel() {
+    const data = rows.map(r => ({
+      'User ID': r.user_id,
+      'Login Name': r.login_name,
+      'Name': r.username,
+      'Email': r.email,
+      'Mobile': r.mobile,
+      'Role': r.role,
+      'Dealer Code': r.dealer_code || '',
+      'Dealer Company': r.dealer_company_name || '',
+      'Login Method': r.login_method,
+      'Login At': r.login_at ? new Date(r.login_at).toLocaleString('en-IN') : '',
+      'Session (so far)': fmtSecs(r.session_seconds),
+      'IP Address': r.ip_address
+    }));
+    const ws = XLSX.utils.json_to_sheet(data);
+    const wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, ws, 'Active Sessions');
+    XLSX.writeFile(wb, 'Active_Sessions.xlsx');
+  }
+
+  return (
+    <div className="card shadow-sm border-0 mb-4">
+      <div className="card-header bg-success text-white d-flex justify-content-between align-items-center">
+        <span>🟢 Currently Logged-In Users &nbsp;<span className="badge bg-white text-success">{rows.length}</span></span>
+        <div className="d-flex gap-2 align-items-center">
+          <small className="opacity-75">Refreshes every 30s · Last: {ts.toLocaleTimeString('en-IN')}</small>
+          <button className="btn btn-sm btn-light" onClick={load} title="Refresh now">🔄</button>
+          <button className="btn btn-sm btn-warning" onClick={exportExcel} disabled={!rows.length}>⬇️ Excel</button>
+        </div>
+      </div>
+      <div className="card-body p-0">
+        {error && <div className="alert alert-danger m-3">{error}</div>}
+        {loading && !rows.length
+          ? <div className="text-center py-4 text-muted">Loading…</div>
+          : rows.length === 0
+            ? <div className="text-center py-4 text-muted">No active sessions right now.</div>
+            : (
+              <div className="table-responsive">
+                <table className="table table-hover table-sm mb-0 align-middle">
+                  <thead className="table-light">
+                    <tr>
+                      <th>#</th>
+                      <th>Login Name</th>
+                      <th>Name</th>
+                      <th>Email</th>
+                      <th>Mobile</th>
+                      <th>Role</th>
+                      <th>Dealer Code</th>
+                      <th>Company</th>
+                      <th>Method</th>
+                      <th>Login At</th>
+                      <th>Duration</th>
+                      <th>IP Address</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {rows.map((r, i) => (
+                      <tr key={r.audit_id || `${r.user_id || 'u'}-${r.login_at || i}-${i}`}>
+                        <td className="text-muted small">{i + 1}</td>
+                        <td className="small text-monospace">{r.login_name || '—'}</td>
+                        <td className="fw-semibold">{r.username || '—'}</td>
+                        <td className="small">{r.email || '—'}</td>
+                        <td className="small">{r.mobile || '—'}</td>
+                        <td>{roleBadge(r.role)}</td>
+                        <td className="small">{r.dealer_code || '—'}</td>
+                        <td className="small">{r.dealer_company_name || '—'}</td>
+                        <td>{methodBadge(r.login_method)}</td>
+                        <td className="small">{fmtDt(r.login_at)}</td>
+                        <td className="small">{fmtSecs(r.session_seconds)}</td>
+                        <td className="small text-monospace">{r.ip_address || '—'}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            )
+        }
+      </div>
+    </div>
+  );
+}
+
+// ── Login History Report ─────────────────────────────────────────────────────
+function today() { return new Date().toISOString().slice(0, 10); }
+
+function LoginReport() {
+  const [from,   setFrom]   = useState(today());
+  const [to,     setTo]     = useState(today());
+  const [role,   setRole]   = useState('ALL');
+  const [status, setStatus] = useState('ALL');
+  const [roles,  setRoles]  = useState([]);
+  const [rows,   setRows]   = useState([]);
+  const [loading, setLoading] = useState(false);
+  const [error,   setError]   = useState(null);
+  const [searched, setSearched] = useState(false);
+
+  useEffect(() => {
+    fetch('/api/admin/audit-roles').then(r => r.json())
+      .then(d => { if (d.success) setRoles(d.roles); });
+  }, []);
+
+  function search(e) {
+    e && e.preventDefault();
+    setLoading(true); setError(null);
+    const params = new URLSearchParams({ from, to, role, status });
+    fetch(`/api/admin/login-report?${params}`)
+      .then(r => r.json())
+      .then(d => { if (d.success) { setRows(d.rows); setSearched(true); } else setError(d.error); })
+      .catch(e => setError(e.message))
+      .finally(() => setLoading(false));
+  }
+
+  // summary counts
+  const total   = rows.length;
+  const success = rows.filter(r => r.login_status === 'SUCCESS').length;
+  const failed  = rows.filter(r => r.login_status === 'FAILED').length;
+  const otp     = rows.filter(r => r.login_method  === 'OTP').length;
+
+  function exportExcel() {
+    const data = rows.map(r => ({
+      'Login Name': r.login_name,
+      'Name': r.username,
+      'Email': r.email,
+      'Mobile': r.mobile,
+      'Role': r.role,
+      'Dealer Code': r.dealer_code || '',
+      'Dealer Company': r.dealer_company_name || '',
+      'Login Method': r.login_method,
+      'Login Status': r.login_status,
+      'Login At':  r.login_at  ? new Date(r.login_at).toLocaleString('en-IN')  : '',
+      'Logout At': r.logout_at ? new Date(r.logout_at).toLocaleString('en-IN') : '',
+      'Session Duration': fmtSecs(r.session_seconds),
+      'IP Address': r.ip_address
+    }));
+    const ws = XLSX.utils.json_to_sheet(data);
+    const wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, ws, 'Login History');
+    XLSX.writeFile(wb, `Login_Report_${from}_to_${to}.xlsx`);
+  }
+
+  return (
+    <div className="card shadow-sm border-0">
+      <div className="card-header bg-primary text-white">
+        📋 Login History Report
+      </div>
+      <div className="card-body">
+        {/* Filter Form */}
+        <form className="row g-2 align-items-end mb-3" onSubmit={search}>
+          <div className="col-md-2">
+            <label className="form-label small fw-semibold mb-1">From Date</label>
+            <input type="date" className="form-control form-control-sm"
+              value={from} onChange={e => setFrom(e.target.value)} max={today()} required />
+          </div>
+          <div className="col-md-2">
+            <label className="form-label small fw-semibold mb-1">To Date</label>
+            <input type="date" className="form-control form-control-sm"
+              value={to} onChange={e => setTo(e.target.value)} max={today()} required />
+          </div>
+          <div className="col-md-2">
+            <label className="form-label small fw-semibold mb-1">Role</label>
+            <select className="form-select form-select-sm" value={role} onChange={e => setRole(e.target.value)}>
+              <option value="ALL">All Roles</option>
+              {roles.map(r => <option key={r} value={r}>{r}</option>)}
+            </select>
+          </div>
+          <div className="col-md-2">
+            <label className="form-label small fw-semibold mb-1">Status</label>
+            <select className="form-select form-select-sm" value={status} onChange={e => setStatus(e.target.value)}>
+              <option value="ALL">All</option>
+              <option value="SUCCESS">Success</option>
+              <option value="FAILED">Failed</option>
+            </select>
+          </div>
+          <div className="col-md-auto">
+            <button type="submit" className="btn btn-primary btn-sm" disabled={loading}>
+              {loading ? '⏳ Loading…' : '🔍 Search'}
+            </button>
+          </div>
+          {rows.length > 0 && (
+            <div className="col-md-auto">
+              <button type="button" className="btn btn-outline-success btn-sm" onClick={exportExcel}>
+                ⬇️ Download Excel
+              </button>
+            </div>
+          )}
+        </form>
+
+        {/* Summary Cards */}
+        {searched && (
+          <div className="row g-2 mb-3">
+            {[
+              { label:'Total Logins',   val: total,   color:'primary' },
+              { label:'Successful',     val: success, color:'success' },
+              { label:'Failed',         val: failed,  color:'danger'  },
+              { label:'Via OTP',        val: otp,     color:'info'    },
+              { label:'Via Password',   val: total - otp, color:'secondary' },
+            ].map(c => (
+              <div className="col-6 col-md-auto" key={c.label}>
+                <div className={`card border-0 bg-${c.color} bg-opacity-10 text-center px-3 py-2`}>
+                  <div className={`fw-bold fs-5 text-${c.color}`}>{c.val}</div>
+                  <div className="small text-muted">{c.label}</div>
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
+
+        {error && <div className="alert alert-danger">{error}</div>}
+
+        {/* Table */}
+        {!loading && searched && rows.length === 0 && (
+          <div className="text-center py-4 text-muted">No records found for selected filters.</div>
+        )}
+        {rows.length > 0 && (
+          <div className="table-responsive">
+              <table className="table table-hover table-sm align-middle mb-0">
+              <thead className="table-light">
+                <tr>
+                  <th>#</th>
+                  <th>Login Name</th>
+                  <th>Name</th>
+                  <th>Email</th>
+                  <th>Mobile</th>
+                  <th>Role</th>
+                  <th>Dealer Code</th>
+                  <th>Company</th>
+                  <th>Method</th>
+                  <th>Status</th>
+                  <th>Login At</th>
+                  <th>Logout At</th>
+                  <th>Duration</th>
+                  <th>IP Address</th>
+                </tr>
+              </thead>
+              <tbody>
+                {rows.map((r, i) => (
+                  <tr key={r.audit_id || `${r.user_id || 'u'}-${r.login_at || i}-${i}`} className={r.login_status === 'FAILED' ? 'table-danger bg-opacity-25' : ''}>
+                    <td className="text-muted small">{i + 1}</td>
+                    <td className="small text-monospace">{r.login_name || '—'}</td>
+                    <td className="fw-semibold">{r.username || '—'}</td>
+                    <td className="small">{r.email || '—'}</td>
+                    <td className="small">{r.mobile || '—'}</td>
+                    <td>{roleBadge(r.role)}</td>
+                    <td className="small">{r.dealer_code || '—'}</td>
+                    <td className="small">{r.dealer_company_name || '—'}</td>
+                    <td>{methodBadge(r.login_method)}</td>
+                    <td>{statusBadge(r.login_status)}</td>
+                    <td className="small">{fmtDt(r.login_at)}</td>
+                    <td className="small">{fmtDt(r.logout_at)}</td>
+                    <td className="small">{fmtSecs(r.session_seconds)}</td>
+                    <td className="small text-monospace">{r.ip_address || '—'}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
+// ── Root App ─────────────────────────────────────────────────────────────────
+function App() {
+  return (
+    <div>
+      <ActiveSessions />
+      <LoginReport />
+    </div>
+  );
+}
+
+ReactDOM.createRoot(document.getElementById('app')).render(<App />);
+</script>
+
+<%- include('../partials/footer') %>
