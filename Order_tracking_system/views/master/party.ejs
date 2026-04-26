@@ -1,0 +1,238 @@
+<%- include('../partials/header') %>
+<script src="https://cdn.jsdelivr.net/npm/react@18/umd/react.development.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/react-dom@18/umd/react-dom.development.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/@babel/standalone/babel.min.js"></script>
+
+<nav aria-label="breadcrumb" class="mb-3">
+  <ol class="breadcrumb">
+    <li class="breadcrumb-item"><a href="/dashboard">Dashboard</a></li>
+    <li class="breadcrumb-item"><a href="#">Master Data</a></li>
+    <li class="breadcrumb-item active">Party</li>
+  </ol>
+</nav>
+<div id="app-root"></div>
+
+<script type="text/babel">
+const { useState, useEffect } = React;
+const EMPTY = { dealer_code:'', party_code:'', party_company_name:'', party_name:'', party_address:'', party_phone:'', party_email:'', party_is_active_flag:true };
+
+function Toast({msg,type,onClose}){
+  if(!msg) return null;
+  return <div className={`alert alert-${type} alert-dismissible`}>{msg}<button className="btn-close ms-2" onClick={onClose}></button></div>;
+}
+
+function App(){
+  const [rows,setRows]=useState([]);
+  const [dealers,setDealers]=useState([]);
+  const [loading,setLoading]=useState(true);
+  const [search,setSearch]=useState('');
+  const [showModal,setShowModal]=useState(false);
+  const [form,setForm]=useState(EMPTY);
+  const [editId,setEditId]=useState(null);
+  const [saving,setSaving]=useState(false);
+  const [toast,setToast]=useState({msg:'',type:'success'});
+  const [sortCol,setSortCol]=useState('party_id');
+  const [sortAsc,setSortAsc]=useState(true);
+
+  const notify=(msg,type='success')=>{setToast({msg,type});setTimeout(()=>setToast({msg:''}),4000);};
+
+  const load=async()=>{
+    setLoading(true);
+    try{
+      const [pr,dr]=await Promise.all([fetch('/api/party'),fetch('/api/party/dealers-list')]);
+      if(!pr.ok) throw new Error(await pr.text());
+      setRows(await pr.json());
+      setDealers(await dr.json());
+    }catch(e){notify(e.message,'danger');}
+    finally{setLoading(false);}
+  };
+  useEffect(()=>{load();},[]);
+
+  const openAdd=()=>{setForm(EMPTY);setEditId(null);setShowModal(true);};
+  const openEdit=(r)=>{
+    setForm({
+      dealer_code:r.dealer_code||'',
+      party_code:r.party_code||'',
+      party_company_name:r.party_company_name||'',
+      party_name:r.party_name||'',
+      party_address:r.party_address||'',
+      party_phone:r.party_phone||'',
+      party_email:r.party_email||'',
+      party_is_active_flag:r.party_is_active_flag
+    });
+    setEditId(r.party_id);
+    setShowModal(true);
+  };
+
+  const save=async(e)=>{
+    e.preventDefault();
+    setSaving(true);
+    try{
+      const res=await fetch(editId?`/api/party/${editId}`:'/api/party',{
+        method:editId?'PUT':'POST',
+        headers:{'Content-Type':'application/json'},
+        body:JSON.stringify(form)
+      });
+      const d=await res.json();
+      if(!res.ok) throw new Error(d.error);
+      notify(editId?'Party updated successfully':'Party added successfully');
+      setShowModal(false);
+      setTimeout(()=>window.location.reload(),800);
+    }catch(e){notify(e.message,'danger');}
+    finally{setSaving(false);}
+  };
+
+  const sort=(col)=>{if(sortCol===col)setSortAsc(!sortAsc);else{setSortCol(col);setSortAsc(true);}};
+  const SI=({col})=>sortCol===col?<span className="ms-1">{sortAsc?'↑':'↓'}</span>:<span className="text-muted ms-1">⇅</span>;
+
+  const filtered=[...rows]
+    .filter(r=>(
+      (r.party_name||'')+' '+
+      (r.party_company_name||'')+' '+
+      (r.party_code||'')+' '+
+      (r.dealer_code||'')+' '+
+      (r.dealer_name||'')
+    ).toLowerCase().includes(search.toLowerCase()))
+    .sort((a,b)=>{
+      let va=a[sortCol],vb=b[sortCol];
+      if(va==null) va=''; if(vb==null) vb='';
+      if(typeof va==='string') va=va.toLowerCase();
+      if(typeof vb==='string') vb=vb.toLowerCase();
+      return sortAsc?(va<vb?-1:va>vb?1:0):(va>vb?-1:va<vb?1:0);
+    });
+
+  return(<div>
+    <Toast msg={toast.msg} type={toast.type} onClose={()=>setToast({msg:''})}/>
+    <div className="card shadow-sm">
+      <div className="card-header bg-white d-flex align-items-center justify-content-between py-3">
+        <h5 className="mb-0 fw-semibold">Party</h5>
+        <button className="btn btn-primary btn-sm" onClick={openAdd}>+ Add Party</button>
+      </div>
+      <div className="card-body">
+        <div className="row mb-3">
+          <div className="col-md-4">
+            <input className="form-control" placeholder="Search…" value={search} onChange={e=>setSearch(e.target.value)}/>
+          </div>
+          <div className="col text-end text-muted small align-self-center">
+            {filtered.length} record{filtered.length!==1?'s':''}
+          </div>
+        </div>
+        {loading
+          ?<div className="text-center py-5"><div className="spinner-border text-primary"></div></div>
+          :(
+          <div className="table-responsive">
+            <table className="table table-hover table-bordered align-middle mb-0">
+              <thead className="table-light"><tr>
+                <th style={{cursor:'pointer',width:'60px'}} onClick={()=>sort('party_id')}>Party ID<SI col="party_id"/></th>
+                <th style={{cursor:'pointer'}} onClick={()=>sort('party_name')}>Party Name<SI col="party_name"/></th>
+                <th style={{cursor:'pointer'}} onClick={()=>sort('party_company_name')}>Party Company<SI col="party_company_name"/></th>
+                <th style={{cursor:'pointer'}} onClick={()=>sort('party_code')}>Party Code<SI col="party_code"/></th>
+                <th>Party Phone</th>
+                <th>Party Email</th>
+                <th style={{cursor:'pointer'}} onClick={()=>sort('dealer_code')}>Dealer Code<SI col="dealer_code"/></th>
+                <th style={{cursor:'pointer'}} onClick={()=>sort('dealer_name')}>Dealer Name<SI col="dealer_name"/></th>
+                <th style={{cursor:'pointer'}} onClick={()=>sort('dealer_company_name')}>Dealer Company<SI col="dealer_company_name"/></th>
+                <th>Dealer Phone</th>
+                <th style={{cursor:'pointer',textAlign:'right'}} onClick={()=>sort('dealer_daily_limit')}>Daily Limit<SI col="dealer_daily_limit"/></th>
+                <th style={{cursor:'pointer',textAlign:'right'}} onClick={()=>sort('dealer_monthly_target')}>Monthly Target<SI col="dealer_monthly_target"/></th>
+                <th style={{width:'90px',textAlign:'center'}}>Status</th>
+                <th style={{width:'90px',textAlign:'center'}}>Action</th>
+              </tr></thead>
+              <tbody>
+                {filtered.length===0
+                  ?<tr><td colSpan="14" className="text-center text-muted py-4">No parties found</td></tr>
+                  :filtered.map(r=><tr key={r.party_id}>
+                    <td>{r.party_id}</td>
+                    <td className="fw-semibold">{r.party_name}</td>
+                    <td>{r.party_company_name||<span className="text-muted">—</span>}</td>
+                    <td>{r.party_code||<span className="text-muted">—</span>}</td>
+                    <td>{r.party_phone||<span className="text-muted">—</span>}</td>
+                    <td>{r.party_email||<span className="text-muted">—</span>}</td>
+                    <td>{r.dealer_code||<span className="text-muted">—</span>}</td>
+                    <td>{r.dealer_name||<span className="text-muted">—</span>}</td>
+                    <td>{r.dealer_company_name||<span className="text-muted">—</span>}</td>
+                    <td>{r.dealer_phone||<span className="text-muted">—</span>}</td>
+                    <td className="text-end">{r.dealer_daily_limit!=null?Number(r.dealer_daily_limit).toLocaleString():<span className="text-muted">—</span>}</td>
+                    <td className="text-end">{r.dealer_monthly_target!=null?Number(r.dealer_monthly_target).toLocaleString():<span className="text-muted">—</span>}</td>
+                    <td className="text-center">
+                      {r.party_is_active_flag
+                        ?<span className="badge bg-success">Active</span>
+                        :<span className="badge bg-secondary">Inactive</span>}
+                    </td>
+                    <td className="text-center">
+                      <button className="btn btn-outline-primary btn-sm" onClick={()=>openEdit(r)}>Edit</button>
+                    </td>
+                  </tr>)
+                }
+              </tbody>
+            </table>
+          </div>
+        )}
+      </div>
+    </div>
+
+    {showModal&&<div className="modal d-block" tabIndex="-1" style={{background:'rgba(0,0,0,0.45)'}}>
+      <div className="modal-dialog modal-dialog-centered modal-lg">
+        <div className="modal-content">
+          <form onSubmit={save}>
+            <div className="modal-header">
+              <h5 className="modal-title">{editId?'Edit':'Add'} Party</h5>
+              <button type="button" className="btn-close" onClick={()=>setShowModal(false)}></button>
+            </div>
+            <div className="modal-body">
+              <div className="row g-3">
+                <div className="col-md-6">
+                  <label className="form-label fw-semibold">Party Name <span className="text-danger">*</span></label>
+                  <input className="form-control" value={form.party_name} onChange={e=>setForm({...form,party_name:e.target.value})} required/>
+                </div>
+                <div className="col-md-6">
+                  <label className="form-label fw-semibold">Party Company Name</label>
+                  <input className="form-control" value={form.party_company_name} onChange={e=>setForm({...form,party_company_name:e.target.value})}/>
+                </div>
+                <div className="col-md-6">
+                  <label className="form-label fw-semibold">Party Code</label>
+                  <input className="form-control" value={form.party_code} onChange={e=>setForm({...form,party_code:e.target.value})}/>
+                </div>
+                <div className="col-md-6">
+                  <label className="form-label fw-semibold">Dealer</label>
+                  <select className="form-select" value={form.dealer_code} onChange={e=>setForm({...form,dealer_code:e.target.value})}>
+                    <option value="">-- Select Dealer --</option>
+                    {dealers.map(d=><option key={d.dealer_code} value={d.dealer_code}>{d.dealer_name} ({d.dealer_code})</option>)}
+                  </select>
+                </div>
+                <div className="col-md-6">
+                  <label className="form-label fw-semibold">Phone</label>
+                  <input className="form-control" value={form.party_phone} onChange={e=>setForm({...form,party_phone:e.target.value})}/>
+                </div>
+                <div className="col-md-6">
+                  <label className="form-label fw-semibold">Email</label>
+                  <input className="form-control" type="email" value={form.party_email} onChange={e=>setForm({...form,party_email:e.target.value})}/>
+                </div>
+                <div className="col-12">
+                  <label className="form-label fw-semibold">Address</label>
+                  <textarea className="form-control" rows="2" value={form.party_address} onChange={e=>setForm({...form,party_address:e.target.value})}></textarea>
+                </div>
+                <div className="col-md-6 d-flex align-items-end">
+                  <div className="form-check form-switch">
+                    <input className="form-check-input" type="checkbox" id="partyActive" checked={form.party_is_active_flag} onChange={e=>setForm({...form,party_is_active_flag:e.target.checked})}/>
+                    <label className="form-check-label" htmlFor="partyActive">Active</label>
+                  </div>
+                </div>
+              </div>
+            </div>
+            <div className="modal-footer">
+              <button type="button" className="btn btn-secondary" onClick={()=>setShowModal(false)}>Cancel</button>
+              <button type="submit" className="btn btn-primary" disabled={saving}>
+                {saving&&<span className="spinner-border spinner-border-sm me-1"></span>}
+                {editId?'Update':'Add Party'}
+              </button>
+            </div>
+          </form>
+        </div>
+      </div>
+    </div>}
+  </div>);
+}
+ReactDOM.createRoot(document.getElementById('app-root')).render(<App/>);
+</script>
+<%- include('../partials/footer') %>

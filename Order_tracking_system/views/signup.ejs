@@ -1,0 +1,268 @@
+<%- include('partials/header') %>
+
+  <% const sortedDealers = (dealers || []).slice().sort(function(a, b) {
+       const aLabel = ((a.dealer_company_name || a.dealer_name || '') + ' | ' + (a.dealer_code || '-') + ' | ' + (a.dealer_name || '')).toLowerCase();
+       const bLabel = ((b.dealer_company_name || b.dealer_name || '') + ' | ' + (b.dealer_code || '-') + ' | ' + (b.dealer_name || '')).toLowerCase();
+       if (aLabel < bLabel) return -1;
+       if (aLabel > bLabel) return 1;
+       return 0;
+     }); %>
+
+  <div class="row justify-content-center">
+    <div class="col-lg-9 col-xl-8">
+      <div class="card shadow-sm">
+        <div class="card-body">
+          <h2 class="card-title mb-3">Create login user</h2>
+          <% if (error) { %>
+            <div class="alert alert-danger"><%= error %></div>
+          <% } %>
+          <% if (success) { %>
+            <div class="alert alert-success"><%= success %></div>
+          <% } %>
+
+          <form method="post" action="/signup">
+            <div class="row g-3">
+              <div class="col-md-6">
+                <label class="form-label">Role <span class="text-danger">*</span></label>
+                <select id="role_id" name="role_id" class="form-select" required>
+                  <option value="">-- Select Role --</option>
+                  <% (roles || []).forEach(function(role){ %>
+                    <option value="<%= role.role_id %>" <%= formData && String(formData.role_id || '') === String(role.role_id) ? 'selected' : '' %>><%= role.role_name %></option>
+                  <% }) %>
+                </select>
+              </div>
+
+              <div class="col-md-6" id="dealerSection" style="display:none;">
+                <label class="form-label">Dealer <span class="text-danger">*</span></label>
+                <input id="dealer_lookup" class="form-control" list="dealerOptions" placeholder="Search or select dealer" autocomplete="off" disabled />
+                <datalist id="dealerOptions">
+                  <% sortedDealers.forEach(function(d){ %>
+                    <option data-dealer-id="<%= d.dealer_id %>" value="<%= d.dealer_company_name || d.dealer_name %> | <%= d.dealer_code || '-' %> | <%= d.dealer_name || '-' %>"></option>
+                  <% }) %>
+                </datalist>
+                <input type="hidden" id="dealer_id" name="dealer_id" value="<%= formData && formData.dealer_id ? formData.dealer_id : '' %>" />
+              </div>
+            </div>
+
+            <div class="row g-3 mt-1" id="loginCoreFields">
+              <div class="col-md-6">
+                <label class="form-label">User login name <span class="text-danger">*</span></label>
+                <input id="user_login_name" name="user_login_name" class="form-control" value="<%= formData && formData.user_login_name ? formData.user_login_name : '' %>" disabled required />
+              </div>
+              <div class="col-md-6">
+                <label class="form-label">Password <span class="text-danger">*</span></label>
+                <div class="input-group">
+                  <input id="password" name="password" type="password" class="form-control" disabled required />
+                  <button class="btn btn-outline-secondary" type="button" id="togglePassword">Show</button>
+                </div>
+              </div>
+            </div>
+
+            <div class="row g-3 mt-1" id="otherRoleFields" style="display:none;">
+              <div class="col-md-6">
+                <label class="form-label">User name</label>
+                <input id="user_name" name="user_name" class="form-control" value="<%= formData && formData.user_name ? formData.user_name : '' %>" disabled />
+              </div>
+              <div class="col-md-6">
+                <label class="form-label">Phone (optional)</label>
+                <input id="user_phone" name="user_phone" class="form-control" maxlength="10" value="<%= formData && formData.user_phone ? formData.user_phone : '' %>" disabled />
+              </div>
+              <div class="col-md-6">
+                <label class="form-label">Email (optional)</label>
+                <input id="user_email" name="user_email" type="email" class="form-control" value="<%= formData && formData.user_email ? formData.user_email : '' %>" disabled />
+              </div>
+            </div>
+
+            <div class="d-flex gap-2 mt-4">
+              <button class="btn btn-primary" type="submit">Sign up</button>
+              <button class="btn btn-outline-secondary" type="reset" id="resetSignupForm">Reset</button>
+            </div>
+
+            <div class="mt-3" id="dealerUsersSection" style="display:none;">
+              <h6 class="fw-semibold mb-2" id="existingUsersTitle">Existing users for selected role</h6>
+              <div class="table-responsive">
+                <table class="table table-sm table-bordered align-middle mb-0">
+                  <thead class="table-light">
+                    <tr>
+                      <th>User login name</th>
+                      <th id="existingCol2">Dealer company name</th>
+                      <th id="existingCol3">Dealer name</th>
+                      <th id="existingCol4" style="display:none;">User email</th>
+                      <th>Status</th>
+                    </tr>
+                  </thead>
+                  <tbody id="dealerUsersBody">
+                    <tr><td colspan="5" class="text-muted text-center">Select a role to view users</td></tr>
+                  </tbody>
+                </table>
+              </div>
+            </div>
+
+          </form>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    const signupForm = document.querySelector('form[action="/signup"]');
+    const roleSelect = document.getElementById('role_id');
+    const dealerSection = document.getElementById('dealerSection');
+    const dealerLookup = document.getElementById('dealer_lookup');
+    const dealerSelect = document.getElementById('dealer_id');
+    const userLoginName = document.getElementById('user_login_name');
+    const passwordInput = document.getElementById('password');
+    const userName = document.getElementById('user_name');
+    const userPhone = document.getElementById('user_phone');
+    const userEmail = document.getElementById('user_email');
+    const otherRoleFields = document.getElementById('otherRoleFields');
+    const dealerUsersSection = document.getElementById('dealerUsersSection');
+    const dealerUsersBody = document.getElementById('dealerUsersBody');
+    const existingUsersTitle = document.getElementById('existingUsersTitle');
+    const existingCol2 = document.getElementById('existingCol2');
+    const existingCol3 = document.getElementById('existingCol3');
+    const existingCol4 = document.getElementById('existingCol4');
+    const togglePasswordBtn = document.getElementById('togglePassword');
+    const resetSignupFormBtn = document.getElementById('resetSignupForm');
+
+    const existingUsers = <%- JSON.stringify(existingUsers || []) %>;
+
+    function selectedRoleName() {
+      const selected = roleSelect.options[roleSelect.selectedIndex];
+      return selected ? String(selected.text || '').toUpperCase() : '';
+    }
+
+    function selectedRoleId() {
+      return String(roleSelect.value || '');
+    }
+
+    function setEnabled(el, enabled) {
+      if (!el) return;
+      el.disabled = !enabled;
+    }
+
+    function syncDealerIdFromLookup() {
+      const entered = String(dealerLookup.value || '').trim();
+      if (!entered) {
+        dealerSelect.value = '';
+        return;
+      }
+      const matchedOption = Array.from(document.querySelectorAll('#dealerOptions option'))
+        .find(opt => String(opt.value || '').trim() === entered);
+      dealerSelect.value = matchedOption ? String(matchedOption.getAttribute('data-dealer-id') || '') : '';
+    }
+
+    function syncDealerLookupFromId() {
+      const id = String(dealerSelect.value || '').trim();
+      if (!id) return;
+      const matchedOption = Array.from(document.querySelectorAll('#dealerOptions option'))
+        .find(opt => String(opt.getAttribute('data-dealer-id') || '').trim() === id);
+      if (matchedOption) dealerLookup.value = String(matchedOption.value || '');
+    }
+
+    function renderDealerUsers() {
+      const roleId = selectedRoleId();
+      const roleName = selectedRoleName();
+      const isDealer = roleName === 'DEALER';
+      const dealerId = dealerSelect.value;
+
+      existingCol2.textContent = isDealer ? 'Dealer company name' : 'User name';
+      existingCol3.textContent = isDealer ? 'Dealer name' : 'User phone';
+      existingCol4.style.display = isDealer ? 'none' : '';
+
+      if (!roleId) {
+        existingUsersTitle.textContent = 'Existing users for selected role';
+        dealerUsersBody.innerHTML = '<tr><td colspan="5" class="text-muted text-center">Select a role to view users</td></tr>';
+        return;
+      }
+
+      let rows = existingUsers.filter(u => String(u.user_role_id || '') === roleId);
+
+      if (isDealer && dealerId) {
+        rows = rows.filter(u => String(u.dealer_id || '') === String(dealerId));
+      }
+
+      existingUsersTitle.textContent = isDealer && dealerId
+        ? 'Existing users for selected role and dealer'
+        : 'Existing users for selected role';
+
+      if (!rows.length) {
+        dealerUsersBody.innerHTML = `<tr><td colspan="${isDealer ? 4 : 5}" class="text-muted text-center">No existing users found for selected role</td></tr>`;
+        return;
+      }
+
+      dealerUsersBody.innerHTML = rows.map(u => `
+        <tr>
+          <td>${u.user_login_name || '-'}</td>
+          <td>${isDealer ? (u.dealer_company_name || '-') : (u.user_name || '-')}</td>
+          <td>${isDealer ? (u.dealer_name || '-') : (u.user_phone || '-')}</td>
+          ${isDealer ? '' : `<td>${u.user_email || '-'}</td>`}
+          <td>${u.user_is_locked_flag ? 'Locked' : (u.user_is_active_flag ? 'Active' : 'Inactive')}</td>
+        </tr>
+      `).join('');
+    }
+
+    function applyRoleRules() {
+      const hasRole = !!roleSelect.value;
+      const isDealer = selectedRoleName() === 'DEALER';
+
+      setEnabled(userLoginName, hasRole);
+      setEnabled(passwordInput, hasRole);
+      setEnabled(togglePasswordBtn, hasRole);
+
+      dealerSection.style.display = (hasRole && isDealer) ? '' : 'none';
+      setEnabled(dealerLookup, hasRole && isDealer);
+      dealerLookup.required = hasRole && isDealer;
+
+      otherRoleFields.style.display = (hasRole && !isDealer) ? '' : 'none';
+      setEnabled(userName, hasRole && !isDealer);
+      setEnabled(userPhone, hasRole && !isDealer);
+      setEnabled(userEmail, hasRole && !isDealer);
+
+      dealerUsersSection.style.display = hasRole ? '' : 'none';
+      if (!isDealer) {
+        dealerLookup.value = '';
+        dealerSelect.value = '';
+      }
+
+      syncDealerIdFromLookup();
+      renderDealerUsers();
+    }
+
+    roleSelect.addEventListener('change', applyRoleRules);
+    dealerLookup.addEventListener('input', () => {
+      syncDealerIdFromLookup();
+      renderDealerUsers();
+    });
+    dealerLookup.addEventListener('change', () => {
+      syncDealerIdFromLookup();
+      renderDealerUsers();
+    });
+
+    togglePasswordBtn.addEventListener('click', () => {
+      if (passwordInput.type === 'password') {
+        passwordInput.type = 'text';
+        togglePasswordBtn.textContent = 'Hide';
+      } else {
+        passwordInput.type = 'password';
+        togglePasswordBtn.textContent = 'Show';
+      }
+    });
+
+    resetSignupFormBtn.addEventListener('click', () => {
+      setTimeout(() => {
+        signupForm.reset();
+        passwordInput.type = 'password';
+        togglePasswordBtn.textContent = 'Show';
+        dealerLookup.value = '';
+        applyRoleRules();
+        renderDealerUsers();
+      }, 0);
+    });
+
+    syncDealerLookupFromId();
+    applyRoleRules();
+    renderDealerUsers();
+  </script>
+
+<%- include('partials/footer') %>

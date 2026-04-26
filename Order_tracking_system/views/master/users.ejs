@@ -1,0 +1,171 @@
+<%- include('../partials/header') %>
+<script src="https://cdn.jsdelivr.net/npm/react@18/umd/react.development.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/react-dom@18/umd/react-dom.development.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/@babel/standalone/babel.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
+
+<nav aria-label="breadcrumb" class="mb-3">
+  <ol class="breadcrumb">
+    <li class="breadcrumb-item"><a href="/dashboard">Dashboard</a></li>
+    <li class="breadcrumb-item"><a href="#">Master Data</a></li>
+    <li class="breadcrumb-item active">Login Users</li>
+  </ol>
+</nav>
+<div id="app-root"></div>
+
+<script type="text/babel">
+const { useState, useEffect } = React;
+const EMPTY = { user_name:'', dealer_company_name:'', user_login_name:'', user_email:'', user_phone:'', role_id:'', password:'', user_is_active_flag:true, user_is_locked_flag:false };
+
+function Toast({msg,type,onClose}){
+  if(!msg) return null;
+  return <div className={`alert alert-${type} alert-dismissible`}>{msg}<button className="btn-close ms-2" onClick={onClose}></button></div>;
+}
+
+function App(){
+  const [rows,setRows]=useState([]); const [roles,setRoles]=useState([]);
+  const [loading,setLoading]=useState(true); const [search,setSearch]=useState('');
+  const [showModal,setShowModal]=useState(false); const [form,setForm]=useState(EMPTY);
+  const [editId,setEditId]=useState(null); const [saving,setSaving]=useState(false);
+  const [isDealerEdit,setIsDealerEdit]=useState(false);
+  const [toast,setToast]=useState({msg:'',type:'success'});
+  const [sortCol,setSortCol]=useState('user_id'); const [sortAsc,setSortAsc]=useState(true);
+
+  const notify=(msg,type='success')=>{setToast({msg,type});setTimeout(()=>setToast({msg:''}),4000);};
+  const load=async()=>{setLoading(true);try{
+    const [ur,rr]=await Promise.all([
+      fetch('/api/master/users', { cache: 'no-store', headers: { 'Cache-Control': 'no-cache' } }),
+      fetch('/api/master/users/roles', { cache: 'no-store', headers: { 'Cache-Control': 'no-cache' } })
+    ]);
+    if(!ur.ok)throw new Error(await ur.text());
+    setRows(await ur.json()); setRoles(await rr.json());
+  }catch(e){notify(e.message,'danger');}finally{setLoading(false);}};
+  useEffect(()=>{load();},[]);
+
+  const openAdd=()=>{window.location.href='/signup';};
+  const exportExcel=()=>{
+    const data=filtered.map(r=>({'User Login Name':r.user_login_name||'','User Name':r.display_name||'','Dealer Company Name':r.display_dealer_company_name||'','Email':r.display_email||'','Phone':r.display_phone||'','Role':r.role_name||'','Status':r.user_is_active_flag?'Active':'Inactive','Locked':r.user_is_locked_flag?'Yes':'No'}) );
+    const ws=XLSX.utils.json_to_sheet(data); const wb=XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb,ws,'LoginUsers'); XLSX.writeFile(wb,'LoginUsers.xlsx');
+  };
+  const openEdit=(r)=>{
+    const dealerRole = !!r.is_dealer_role || String(r.role_name||'').toUpperCase()==='DEALER';
+    setIsDealerEdit(dealerRole);
+    setForm({
+      user_name:r.display_name||r.user_name||'',
+      dealer_company_name:r.display_dealer_company_name||r.dealer_company_name||'',
+      user_login_name:r.user_login_name||'',
+      user_email:r.display_email||r.user_email||'',
+      user_phone:r.display_phone||r.user_phone||'',
+      role_id:r.role_id||'',
+      password:'',
+      user_is_active_flag:r.user_is_active_flag,
+      user_is_locked_flag:!!r.user_is_locked_flag
+    });
+    setEditId(r.user_id);
+    setShowModal(true);
+  };
+
+  const save=async(e)=>{e.preventDefault();setSaving(true);
+    try{const body={...form};if(!body.password)delete body.password;
+    const res=await fetch(editId?`/api/master/users/${editId}`:'/api/master/users',{method:editId?'PUT':'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)});
+    const d=await res.json();if(!res.ok)throw new Error(d.error);notify(editId?'Login user updated':'Login user created');setShowModal(false);load();}
+    catch(e){notify(e.message,'danger');}finally{setSaving(false);}};
+
+  const sort=(col)=>{if(sortCol===col)setSortAsc(!sortAsc);else{setSortCol(col);setSortAsc(true);}};
+  const SI=({col})=>sortCol===col?<span className="ms-1">{sortAsc?'↑':'↓'}</span>:<span className="text-muted ms-1">⇅</span>;
+
+  const filtered=[...rows].filter(r=>((r.user_login_name||'')+' '+(r.display_name||'')+' '+(r.display_dealer_company_name||'')+' '+(r.display_email||'')+' '+(r.display_phone||'')+' '+(r.role_name||'')).toLowerCase().includes(search.toLowerCase()))
+    .sort((a,b)=>{let va=a[sortCol],vb=b[sortCol];if(typeof va==='string')va=va.toLowerCase();if(typeof vb==='string')vb=vb.toLowerCase();return sortAsc?(va<vb?-1:va>vb?1:0):(va>vb?-1:va<vb?1:0);});
+
+  return(<div>
+    <Toast msg={toast.msg} type={toast.type} onClose={()=>setToast({msg:''})}/>
+    <div className="card shadow-sm">
+      <div className="card-header bg-white d-flex align-items-center justify-content-between py-3">
+        <h5 className="mb-0 fw-semibold">Login Users</h5>
+        <div className="d-flex gap-2">
+          <button className="btn btn-outline-success btn-sm" onClick={exportExcel}>⬇️ Download Excel</button>
+          <button className="btn btn-primary btn-sm" onClick={openAdd}>+ Add Login User</button>
+        </div>
+      </div>
+      <div className="card-body">
+        <div className="row mb-3">
+          <div className="col-md-4"><input className="form-control" placeholder="Search…" value={search} onChange={e=>setSearch(e.target.value)}/></div>
+          <div className="col text-end text-muted small align-self-center">{filtered.length} record{filtered.length!==1?'s':''}</div>
+        </div>
+        {loading?<div className="text-center py-5"><div className="spinner-border text-primary"></div></div>:(
+        <div className="table-responsive">
+          <table className="table table-hover table-bordered align-middle mb-0">
+            <thead className="table-light"><tr>
+              <th style={{cursor:'pointer'}} onClick={()=>sort('user_login_name')}>User Login Name<SI col="user_login_name"/></th>
+              <th style={{cursor:'pointer'}} onClick={()=>sort('display_name')}>User Name<SI col="display_name"/></th>
+              <th style={{cursor:'pointer'}} onClick={()=>sort('display_dealer_company_name')}>Dealer Company Name<SI col="display_dealer_company_name"/></th>
+              <th style={{cursor:'pointer'}} onClick={()=>sort('display_email')}>Email<SI col="display_email"/></th>
+              <th style={{cursor:'pointer'}} onClick={()=>sort('display_phone')}>Phone<SI col="display_phone"/></th>
+              <th style={{cursor:'pointer'}} onClick={()=>sort('role_name')}>Role<SI col="role_name"/></th>
+              <th style={{width:'90px',textAlign:'center'}}>Status</th>
+              <th style={{width:'90px',textAlign:'center'}}>Locked</th>
+              <th style={{width:'90px',textAlign:'center'}}>Action</th>
+            </tr></thead>
+            <tbody>{filtered.length===0?<tr><td colSpan="9" className="text-center text-muted py-4">No users found</td></tr>:
+              filtered.map(r=><tr key={r.user_id}>
+                <td>{r.user_login_name||<span className="text-muted">—</span>}</td>
+                <td>{r.display_name||<span className="text-muted">—</span>}</td>
+                <td>{r.display_dealer_company_name||<span className="text-muted">—</span>}</td>
+                <td>{r.display_email||<span className="text-muted">—</span>}</td>
+                <td>{r.display_phone||<span className="text-muted">—</span>}</td>
+                <td><span className="badge bg-info text-dark">{r.role_name||'—'}</span></td>
+                <td className="text-center">{r.user_is_active_flag?<span className="badge bg-success">Active</span>:<span className="badge bg-secondary">Inactive</span>}</td>
+                <td className="text-center">{r.user_is_locked_flag?<span className="badge bg-danger">Locked</span>:<span className="badge bg-success">No</span>}</td>
+                <td className="text-center"><button className="btn btn-outline-primary btn-sm" onClick={()=>openEdit(r)}>Edit</button></td>
+              </tr>)
+            }</tbody>
+          </table>
+        </div>)}
+      </div>
+    </div>
+    {showModal&&<div className="modal d-block" tabIndex="-1" style={{background:'rgba(0,0,0,0.45)'}}>
+      <div className="modal-dialog modal-dialog-centered modal-lg"><div className="modal-content">
+        <form onSubmit={save}>
+          <div className="modal-header"><h5 className="modal-title">Edit Login User</h5><button type="button" className="btn-close" onClick={()=>setShowModal(false)}></button></div>
+          <div className="modal-body">
+            <div className="row g-3">
+              <div className="col-md-6"><label className="form-label fw-semibold">User Login Name <span className="text-danger">*</span></label>
+                <input className="form-control" value={form.user_login_name} onChange={e=>setForm({...form,user_login_name:e.target.value})} required/></div>
+              <div className="col-md-6"><label className="form-label fw-semibold">Role</label>
+                <select className="form-select" value={form.role_id} disabled>
+                  <option value="">-- Select Role --</option>
+                  {roles.map(r=><option key={r.role_id} value={r.role_id}>{r.role_name}</option>)}
+                </select></div>
+              <div className="col-md-6"><label className="form-label fw-semibold">Password {editId&&<span className="text-muted small">(leave blank to keep)</span>}</label>
+                <input className="form-control" type="password" value={form.password} placeholder={editId?'Leave blank to keep current':'Default: Change@123'} onChange={e=>setForm({...form,password:e.target.value})}/></div>
+              <div className="col-md-6"><label className="form-label fw-semibold">Name <span className="text-danger">*</span></label>
+                <input className="form-control" value={form.user_name} onChange={e=>setForm({...form,user_name:e.target.value})} disabled={isDealerEdit} required/></div>
+              {isDealerEdit && <div className="col-12"><label className="form-label fw-semibold">Dealer Company Name</label>
+                <input className="form-control" value={form.dealer_company_name||''} disabled /></div>}
+              <div className="col-md-6"><label className="form-label fw-semibold">Email <span className="text-muted">(optional)</span></label>
+                <input className="form-control" type="email" value={form.user_email} onChange={e=>setForm({...form,user_email:e.target.value})}/></div>
+              <div className="col-md-6"><label className="form-label fw-semibold">Phone <span className="text-muted">(optional)</span></label>
+                <input className="form-control" value={form.user_phone} onChange={e=>setForm({...form,user_phone:e.target.value})}/></div>
+              <div className="col-md-3 d-flex align-items-end"><div className="form-check form-switch">
+                <input className="form-check-input" type="checkbox" id="userActive" checked={form.user_is_active_flag} onChange={e=>setForm({...form,user_is_active_flag:e.target.checked})}/>
+                <label className="form-check-label" htmlFor="userActive">Active</label>
+              </div></div>
+              <div className="col-md-3 d-flex align-items-end"><div className="form-check form-switch">
+                <input className="form-check-input" type="checkbox" id="userLocked" checked={form.user_is_locked_flag} onChange={e=>setForm({...form,user_is_locked_flag:e.target.checked})}/>
+                <label className="form-check-label" htmlFor="userLocked">Locked</label>
+              </div></div>
+            </div>
+          </div>
+          <div className="modal-footer">
+            <button type="button" className="btn btn-secondary" onClick={()=>setShowModal(false)}>Cancel</button>
+            <button type="submit" className="btn btn-primary" disabled={saving}>{saving&&<span className="spinner-border spinner-border-sm me-1"></span>}Update</button>
+          </div>
+        </form>
+      </div></div>
+    </div>}
+  </div>);
+}
+ReactDOM.createRoot(document.getElementById('app-root')).render(<App/>);
+</script>
+<%- include('../partials/footer') %>
