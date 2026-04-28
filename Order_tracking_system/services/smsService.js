@@ -138,4 +138,101 @@ async function sendOtp(phone, otp) {
   throw new Error(`Unknown SMS_PROVIDER: ${PROVIDER}. Use 'dev', 'msg91', or 'twilio'`);
 }
 
-module.exports = { sendOtp };
+/**
+ * Send custom alert message to phone
+ * Used for business alerts (order limit notifications, etc)
+ */
+async function sendAlert(phone, message) {
+  if (PROVIDER === 'dev') {
+    console.log(`\n[SMS ALERT DEV MODE] ${phone}: ${message}\n`);
+    return { success: true };
+  }
+
+  if (PROVIDER === 'msg91') {
+    const authKey = process.env.MSG91_AUTH_KEY;
+    const senderId = process.env.MSG91_SENDER_ID || 'ODTS';
+
+    if (!authKey) throw new Error('MSG91_AUTH_KEY must be set in .env');
+
+    const intlPhone = phone.startsWith('91') ? phone : `91${phone}`;
+    const payload = JSON.stringify({
+      sender: senderId,
+      route: '4',
+      country: '91',
+      sms: [{ message, to: intlPhone }]
+    });
+
+    return new Promise((resolve, reject) => {
+      const req = https.request({
+        hostname: 'api.msg91.com',
+        path: `/api/v5/sms/send?authkey=${authKey}`,
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Content-Length': Buffer.byteLength(payload)
+        }
+      }, (res) => {
+        let data = '';
+        res.on('data', chunk => data += chunk);
+        res.on('end', () => {
+          try {
+            const parsed = JSON.parse(data);
+            if (parsed.type === 'success' || parsed.message === 'success') return resolve({ success: true });
+            return reject(new Error(`MSG91 error: ${data}`));
+          } catch {
+            return reject(new Error(`MSG91 bad response: ${data}`));
+          }
+        });
+      });
+      req.on('error', reject);
+      req.write(payload);
+      req.end();
+    });
+  }
+
+  if (PROVIDER === 'twilio') {
+    const accountSid = process.env.TWILIO_ACCOUNT_SID;
+    const authToken = process.env.TWILIO_AUTH_TOKEN;
+    const from = process.env.TWILIO_FROM_NUMBER;
+
+    if (!accountSid || !authToken || !from) {
+      throw new Error('Twilio credentials must be set in .env');
+    }
+
+    const intlPhone = phone.startsWith('+') ? phone : `+91${phone}`;
+    const postData = new URLSearchParams({ To: intlPhone, From: from, Body: message }).toString();
+
+    return new Promise((resolve, reject) => {
+      const auth = Buffer.from(`${accountSid}:${authToken}`).toString('base64');
+      const req = https.request({
+        hostname: 'api.twilio.com',
+        path: `/2010-04-01/Accounts/${accountSid}/Messages.json`,
+        method: 'POST',
+        headers: {
+          'Authorization': `Basic ${auth}`,
+          'Content-Type': 'application/x-www-form-urlencoded',
+          'Content-Length': Buffer.byteLength(postData)
+        }
+      }, (res) => {
+        let data = '';
+        res.on('data', chunk => data += chunk);
+        res.on('end', () => {
+          try {
+            const parsed = JSON.parse(data);
+            if (parsed.sid) return resolve({ success: true });
+            return reject(new Error(`Twilio error: ${data}`));
+          } catch {
+            return reject(new Error(`Twilio bad response: ${data}`));
+          }
+        });
+      });
+      req.on('error', reject);
+      req.write(postData);
+      req.end();
+    });
+  }
+
+  throw new Error(`Unknown SMS_PROVIDER: ${PROVIDER}. Use 'dev', 'msg91', or 'twilio'`);
+}
+
+module.exports = { sendOtp, sendAlert };

@@ -9,32 +9,50 @@
 </nav>
 
 <div class="row justify-content-center">
-  <div class="col-lg-8">
+  <div class="col-lg-9">
     <div class="card shadow-sm border-0">
       <div class="card-header bg-white py-3 d-flex justify-content-between align-items-center">
         <div>
           <h4 class="mb-1">New Order</h4>
-          <div class="text-muted small">Fill in the required details to place a new order.</div>
+          <div class="text-muted small">Add one or more products. Party, address &amp; loading details are common to all products.</div>
         </div>
         <a href="/orders" class="btn btn-outline-secondary btn-sm">Back to Orders</a>
       </div>
       <div class="card-body p-4">
         <div id="form-alert" class="alert d-none" role="alert"></div>
 
+        <!-- Daily Limit Alert -->
+        <div id="limit-info" class="alert alert-info d-none mb-4" role="alert">
+          <div class="row g-2">
+            <div class="col-md-6">
+              <div><strong>Daily Limit:</strong> <span id="limit-value">—</span> MT</div>
+            </div>
+            <div class="col-md-6">
+              <div><strong>Remaining:</strong> <span id="remaining-value" class="fw-bold">—</span> MT</div>
+            </div>
+            <div id="limit-warning" class="col-12 d-none">
+              <div class="alert alert-danger py-1 px-2 mb-0">⚠️ <span id="warning-text"></span></div>
+            </div>
+            <div id="admin-contact" class="col-12 d-none">
+              <small class="text-muted">Need to increase your limit? <a id="admin-phone-link" href="#">Contact Admin</a></small>
+            </div>
+          </div>
+        </div>
+
         <form id="new-order-form" class="row g-3">
-          <div class="col-md-6">
-            <label for="product_id" class="form-label fw-semibold">Product</label>
-            <select id="product_id" name="product_id" class="form-select" required>
-              <option value="">Loading products…</option>
-            </select>
+
+          <!-- ── Products Section ──────────────────────────────────── -->
+          <div class="col-12">
+            <div class="d-flex align-items-center justify-content-between mb-2">
+              <label class="form-label fw-semibold mb-0">Products &amp; Quantities <span class="text-danger">*</span></label>
+              <button type="button" id="add-item-btn" class="btn btn-sm btn-outline-primary">+ Add Product</button>
+            </div>
+            <div id="items-container">
+              <!-- rows injected by JS -->
+            </div>
           </div>
 
-          <div class="col-md-6">
-            <label for="quantity" class="form-label fw-semibold">Quantity</label>
-            <input id="quantity" name="quantity" type="text" class="form-control" placeholder="Enter quantity" required>
-          </div>
-
-          <!-- Party Section -->
+          <!-- ── Party Section ─────────────────────────────────────── -->
           <div class="col-12">
             <div class="d-flex align-items-center justify-content-between mb-2">
               <label class="form-label fw-semibold mb-0">Ship to Party</label>
@@ -44,7 +62,6 @@
               </div>
             </div>
 
-            <!-- Existing party -->
             <div id="existing-party-section">
               <select id="party_select" class="form-select" required>
                 <option value="">Loading parties…</option>
@@ -52,7 +69,6 @@
               <input type="hidden" id="party_id" name="party_id">
             </div>
 
-            <!-- New party -->
             <div id="new-party-section" class="d-none">
               <div class="row g-2">
                 <div class="col-12">
@@ -70,24 +86,24 @@
 
           <div class="col-md-6">
             <label for="contact_number" class="form-label fw-semibold">Contact Number</label>
-            <input id="contact_number" name="contact_number" type="text" class="form-control" placeholder="Auto-filled or enter manually">
+            <input id="contact_number" type="text" class="form-control" placeholder="Auto-filled or enter manually">
           </div>
 
           <div class="col-12">
             <label for="delivery_address" class="form-label fw-semibold">Delivery Address</label>
-            <textarea id="delivery_address" name="delivery_address" class="form-control" rows="2" placeholder="Auto-filled or enter manually"></textarea>
+            <textarea id="delivery_address" class="form-control" rows="2" placeholder="Auto-filled or enter manually"></textarea>
           </div>
 
           <div class="col-md-6">
             <label for="load_type_code" class="form-label fw-semibold">Loading Type</label>
-            <select id="load_type_code" name="load_type_code" class="form-select" required>
+            <select id="load_type_code" class="form-select" required>
               <option value="">Loading…</option>
             </select>
           </div>
 
           <div class="col-md-6">
             <label for="preferred_location_code" class="form-label fw-semibold">Preferred Loading Location</label>
-            <select id="preferred_location_code" name="preferred_location_code" class="form-select" required>
+            <select id="preferred_location_code" class="form-select" required>
               <option value="">Loading…</option>
             </select>
           </div>
@@ -103,29 +119,114 @@
 </div>
 
 <script>
-  // Populate Product dropdown
+  let productsData = [];
+  let dealerLimit = null;
+
+  // ── Load dealer limit ────────────────────────────────────────────────────
   (async () => {
-    const sel = document.getElementById('product_id');
     try {
-      const res = await fetch('/api/dealer/products');
-      const products = await res.json();
-      sel.innerHTML = '<option value="">Select Product</option>';
-      if (products.length === 0) {
-        sel.innerHTML = '<option value="">No products available</option>';
-      } else {
-        products.forEach(p => {
-          const opt = document.createElement('option');
-          opt.value = p.product_id;
-          opt.textContent = p.product_name;
-          sel.appendChild(opt);
-        });
+      const res = await fetch('/api/dealer/limit');
+      dealerLimit = await res.json();
+      const limtInfoDiv = document.getElementById('limit-info');
+      if (dealerLimit.daily_limit > 0) {
+        document.getElementById('limit-value').textContent = dealerLimit.daily_limit.toFixed(3);
+        document.getElementById('remaining-value').textContent = dealerLimit.remaining.toFixed(3);
+        limtInfoDiv.classList.remove('d-none');
+
+        // Show admin contact if limit is low (≥70%)
+        if (dealerLimit.percentage >= 70) {
+          const adminContactDiv = document.getElementById('admin-contact');
+          const adminPhoneLink = document.getElementById('admin-phone-link');
+          if (dealerLimit.admin_phone) {
+            adminPhoneLink.href = `tel:${dealerLimit.admin_phone}`;
+            adminPhoneLink.textContent = dealerLimit.admin_phone;
+            adminContactDiv.classList.remove('d-none');
+          }
+        }
       }
     } catch (e) {
-      sel.innerHTML = '<option value="">Failed to load products</option>';
+      console.error('Failed to load limit:', e);
     }
   })();
 
-  // Populate Loading Type dropdown (flat list, no groups)
+  // ── Item rows ────────────────────────────────────────────────────────────
+  function buildProductOptions() {
+    const blank = '<option value="">Select Product</option>';
+    return blank + productsData.map(p =>
+      `<option value="${p.product_id}">${p.product_name}</option>`
+    ).join('');
+  }
+
+  function updateRemoveButtons() {
+    const rows = document.querySelectorAll('.item-row');
+    rows.forEach(row => {
+      row.querySelector('.remove-item').style.visibility = rows.length === 1 ? 'hidden' : 'visible';
+    });
+  }
+
+  const KG_PER_BAG = 50;
+
+  function createItemRow() {
+    const div = document.createElement('div');
+    div.className = 'item-row row g-2 mb-2 align-items-end p-2 border rounded bg-light';
+    div.innerHTML = `
+      <div class="col-md-5">
+        <label class="form-label fw-semibold small mb-1">Product <span class="text-danger">*</span></label>
+        <select class="form-select item-product" required>${buildProductOptions()}</select>
+      </div>
+      <div class="col-md-3">
+        <label class="form-label fw-semibold small mb-1">No. of Bags <span class="text-danger">*</span></label>
+        <input type="number" min="1" step="1" class="form-control item-bags" placeholder="e.g. 100" required>
+      </div>
+      <div class="col-md-3">
+        <label class="form-label fw-semibold small mb-1">
+          Quantity (MT)
+          <span class="text-muted fw-normal" style="font-size:.75rem"> = bags × ${KG_PER_BAG}kg</span>
+        </label>
+        <input type="number" step="0.001" class="form-control item-qty bg-light" placeholder="Auto-calculated" readonly tabindex="-1">
+      </div>
+      <div class="col-md-1 d-flex align-items-end pb-1">
+        <button type="button" class="btn btn-outline-danger btn-sm remove-item" style="visibility:hidden">×</button>
+      </div>
+    `;
+    div.querySelector('.remove-item').addEventListener('click', () => {
+      div.remove();
+      updateRemoveButtons();
+    });
+
+    // Auto-calculate MT when bags changes
+    div.querySelector('.item-bags').addEventListener('input', function () {
+      const bags = parseInt(this.value, 10);
+      const qtyField = div.querySelector('.item-qty');
+      if (bags > 0) {
+        qtyField.value = (bags * KG_PER_BAG / 1000).toFixed(3);
+      } else {
+        qtyField.value = '';
+      }
+    });
+
+    return div;
+  }
+
+  // ── Load dropdowns ───────────────────────────────────────────────────────
+  (async () => {
+    // Products (needed before first row is created)
+    try {
+      const res = await fetch('/api/dealer/products');
+      productsData = await res.json();
+    } catch (e) {
+      productsData = [];
+    }
+    // Add first item row
+    document.getElementById('items-container').appendChild(createItemRow());
+
+    document.getElementById('add-item-btn').addEventListener('click', () => {
+      document.getElementById('items-container').appendChild(createItemRow());
+      updateRemoveButtons();
+    });
+  })();
+
+  // Loading Type
   (async () => {
     const sel = document.getElementById('load_type_code');
     try {
@@ -138,12 +239,10 @@
         opt.textContent = c.code_desc;
         sel.appendChild(opt);
       });
-    } catch (e) {
-      sel.innerHTML = '<option value="">Failed to load</option>';
-    }
+    } catch (e) { sel.innerHTML = '<option value="">Failed to load</option>'; }
   })();
 
-  // Populate Preferred Loading Location dropdown (grouped by code_label)
+  // Preferred Loading Location (grouped)
   (async () => {
     const sel = document.getElementById('preferred_location_code');
     try {
@@ -167,9 +266,7 @@
         });
         sel.appendChild(og);
       });
-    } catch (e) {
-      sel.innerHTML = '<option value="">Failed to load</option>';
-    }
+    } catch (e) { sel.innerHTML = '<option value="">Failed to load</option>'; }
   })();
 
   // ── Party logic ──────────────────────────────────────────────────────────
@@ -182,7 +279,7 @@
       partiesData = await res.json();
       sel.innerHTML = '<option value="">Select Party</option>';
       if (partiesData.length === 0) {
-        sel.innerHTML = '<option value="">No parties found</option>';
+        sel.innerHTML = '<option value="">No parties found — add a new one</option>';
       } else {
         partiesData.forEach(p => {
           const opt = document.createElement('option');
@@ -191,30 +288,23 @@
           sel.appendChild(opt);
         });
       }
-    } catch (e) {
-      sel.innerHTML = '<option value="">Failed to load parties</option>';
-    }
+    } catch (e) { sel.innerHTML = '<option value="">Failed to load parties</option>'; }
   })();
 
-  // Auto-fill phone & address when existing party is selected
   document.getElementById('party_select').addEventListener('change', function () {
     const selected = partiesData.find(p => String(p.party_id) === this.value);
     document.getElementById('party_id').value = this.value;
-    document.getElementById('contact_number').value = selected ? (selected.party_phone || '') : '';
+    document.getElementById('contact_number').value  = selected ? (selected.party_phone   || '') : '';
     document.getElementById('delivery_address').value = selected ? (selected.party_address || '') : '';
   });
 
-  // Sync new party phone → contact number field in real-time
   document.getElementById('new_party_phone').addEventListener('input', function () {
     document.getElementById('contact_number').value = this.value;
   });
-
-  // Sync new party address → delivery address field in real-time
   document.getElementById('new_party_address').addEventListener('input', function () {
     document.getElementById('delivery_address').value = this.value;
   });
 
-  // Toggle between existing and new party
   document.getElementById('new-party-toggle').addEventListener('change', function () {
     const isNew = this.checked;
     document.getElementById('existing-party-section').classList.toggle('d-none', isNew);
@@ -222,18 +312,17 @@
     document.getElementById('party_select').required = !isNew;
     if (isNew) {
       document.getElementById('party_id').value = '';
-      document.getElementById('contact_number').value = '';
+      document.getElementById('contact_number').value  = '';
       document.getElementById('delivery_address').value = '';
     } else {
-      // Re-trigger auto-fill from selected existing party
       document.getElementById('party_select').dispatchEvent(new Event('change'));
     }
   });
 
   // ── Form submit ──────────────────────────────────────────────────────────
-  const form = document.getElementById('new-order-form');
+  const form      = document.getElementById('new-order-form');
   const submitBtn = document.getElementById('submit-btn');
-  const alertBox = document.getElementById('form-alert');
+  const alertBox  = document.getElementById('form-alert');
 
   function showAlert(type, message) {
     alertBox.className = `alert alert-${type}`;
@@ -245,23 +334,37 @@
     submitBtn.disabled = true;
     submitBtn.textContent = 'Submitting...';
     alertBox.className = 'alert d-none';
-    alertBox.textContent = '';
 
     const isNew = document.getElementById('new-party-toggle').checked;
     let party_id = document.getElementById('party_id').value;
 
     try {
-      // If adding a new party, create it first
+      // Collect and validate item rows
+      const itemRows = document.querySelectorAll('.item-row');
+      const items = [];
+      for (let idx = 0; idx < itemRows.length; idx++) {
+        const row = itemRows[idx];
+        const product_id = row.querySelector('.item-product').value;
+        const bags       = row.querySelector('.item-bags').value.trim();
+        if (!product_id) throw new Error(`Row ${idx + 1}: please select a product`);
+        if (!bags || parseInt(bags, 10) < 1) throw new Error(`Row ${idx + 1}: number of bags is required`);
+        const order_bags     = parseInt(bags, 10);
+        const order_quantity = parseFloat((order_bags * KG_PER_BAG / 1000).toFixed(3));
+        items.push({ product_id: parseInt(product_id), order_bags, order_quantity });
+      }
+      if (items.length === 0) throw new Error('At least one product is required');
+
+      // Create new party if needed
       if (isNew) {
         const newName = document.getElementById('new_party_name').value.trim();
         if (!newName) throw new Error('Party name is required.');
         const pRes = await fetch('/api/dealer/parties', {
-          method: 'POST',
+          method:  'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
+          body:    JSON.stringify({
             party_company_name: newName,
-            party_phone: document.getElementById('new_party_phone').value.trim(),
-            party_address: document.getElementById('new_party_address').value.trim(),
+            party_phone:        document.getElementById('new_party_phone').value.trim(),
+            party_address:      document.getElementById('new_party_address').value.trim(),
           }),
         });
         const pData = await pRes.json();
@@ -271,18 +374,39 @@
         if (!party_id) throw new Error('Please select a party.');
       }
 
-      const formData = new FormData(form);
-      const payload = Object.fromEntries(formData.entries());
-      payload.party_id = party_id;
+      // Check total quantity against limit
+      const totalQty = items.reduce((sum, item) => sum + item.order_quantity, 0);
+      if (dealerLimit && dealerLimit.daily_limit > 0) {
+        if (totalQty > dealerLimit.remaining) {
+          throw new Error(`Order quantity (${totalQty.toFixed(3)} MT) exceeds remaining daily limit (${dealerLimit.remaining.toFixed(3)} MT). ${dealerLimit.percentage.toFixed(0)}% of limit already used.`);
+        }
+        if (totalQty >= dealerLimit.remaining * 0.8) {
+          const proceed = confirm(`⚠️ Warning: This order will use ${(totalQty / dealerLimit.daily_limit * 100).toFixed(0)}% of your daily limit. Continue?`);
+          if (!proceed) throw new Error('Order cancelled by user');
+        }
+      }
+
+      const payload = {
+        items,
+        party_id,
+        load_type_code:          document.getElementById('load_type_code').value          || null,
+        preferred_location_code: document.getElementById('preferred_location_code').value || null,
+      };
 
       const response = await fetch('/api/dealer/orders', {
-        method: 'POST',
+        method:  'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(payload),
+        body:    JSON.stringify(payload),
       });
 
       const data = await response.json();
-      if (!response.ok) throw new Error(data.error || 'Failed to create order');
+      if (!response.ok) {
+        let errorMsg = data.error || 'Failed to create order';
+        if (data.error && dealerLimit && dealerLimit.admin_phone) {
+          errorMsg += ` | Contact Admin: ${dealerLimit.admin_phone}`;
+        }
+        throw new Error(errorMsg);
+      }
 
       showAlert('success', `Order #${data.order_id} placed successfully.`);
       window.setTimeout(() => { window.location.href = '/orders'; }, 800);

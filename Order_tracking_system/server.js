@@ -13,6 +13,7 @@ const trackingRoutes = require('./routes/tracking');
 const driverRoutes = require('./routes/driver');
 const auditRoutes = require('./routes/audit');
 const codeReferenceRoutes = require('./routes/codeReference');
+const dispatcherRoutes = require('./routes/dispatcher');
 const pool = require('./db');
 
 const app = express();
@@ -66,6 +67,7 @@ app.use('/', trackingRoutes);
 app.use('/', driverRoutes);
 app.use('/', auditRoutes);
 app.use('/', codeReferenceRoutes);
+app.use('/', dispatcherRoutes);
 
 // Test DB connection and list users (tries schema `odts.users` first)
 app.get('/users', async (req, res) => {

@@ -1,6 +1,7 @@
 const express = require('express');
 const router = express.Router();
 const pool = require('../db');
+const { sendAlert } = require('../services/smsService');
 
 function ensureAuth(req, res, next) {
   if (!req.session || !req.session.user) return res.redirect('/signin');
@@ -13,7 +14,6 @@ function ensureDealer(req, res, next) {
   return next();
 }
 
-// Valid status transitions
 const VALID_TRANSITIONS = {
   ORDER_PLACED: ['ACCEPTED', 'ON_HOLD'],
   ACCEPTED:     ['DISPATCHED'],
@@ -21,30 +21,55 @@ const VALID_TRANSITIONS = {
   ON_HOLD:      ['ORDER_PLACED'],
 };
 
-// Shape a DB row into the object the frontend expects
+// Correlated subquery — fetches all items for an order as a JSON array
+const ITEMS_SUBQUERY = `
+  (SELECT COALESCE(json_agg(json_build_object(
+      'product_id',    oi.product_id,
+      'product_name',  p.product_name,
+      'order_bags',    oi.order_bags,
+      'order_quantity', oi.order_quantity::text
+    ) ORDER BY oi.item_id), '[]'::json)
+   FROM odts.dealer_order_items oi
+   LEFT JOIN odts.products p ON p.product_id = oi.product_id
+   WHERE oi.order_id = o.order_id
+  ) AS items
+`;
+
 function toOrderShape(row) {
+  const rawItems = row.items;
+  let items = [];
+  if (rawItems) {
+    const parsed = typeof rawItems === 'string' ? JSON.parse(rawItems) : rawItems;
+    if (Array.isArray(parsed)) items = parsed.filter(i => i && i.product_id);
+  }
+  const productName = items.length > 0
+    ? items.map(i => i.product_name || `Product #${i.product_id}`).join(', ')
+    : '';
+  const totalQty = items.reduce((sum, i) => sum + parseFloat(i.order_quantity || 0), 0);
+
   const order = {
-    order_id:                   row.order_id,
-    dealer_id:                  row.dealer_id,
-    dealer_name:                row.dealer_name || null,
-    product_name:               row.product_name || String(row.product_id),
-    quantity:                   row.order_quantity,
-    unit:                       'MT',
-    party_id:                   row.party_id || null,
-    party_name:                 row.party_company_name || row.party_name_col || null,
-    party_phone:                row.party_phone || null,
-    party_address:              row.party_address || null,
-    load_type_code:             row.load_type_code || null,
-    load_type_desc:             row.load_type_desc || row.load_type_code || null,
-    preferred_location_code:    row.preferred_location_code || null,
-    preferred_location_desc:    row.preferred_location_desc || row.preferred_location_code || null,
-    delivery_location:          row.preferred_location_desc || row.preferred_location_code || null,
-    remarks:                    row.remarks || '',
-    order_status:               row.order_status,
-    on_hold_by:                 null,
-    on_hold_reason:             null,
-    order_date:                 row.order_date,
-    dispatch:                   null,
+    order_id:                row.order_id,
+    dealer_id:               row.dealer_id,
+    dealer_name:             row.dealer_name || null,
+    items,
+    product_name:            productName,
+    quantity:                totalQty || parseFloat(row.order_quantity) || 0,
+    unit:                    'MT',
+    party_id:                row.party_id || null,
+    party_name:              row.party_company_name || row.party_name_col || null,
+    party_phone:             row.party_phone || null,
+    party_address:           row.party_address || null,
+    load_type_code:          row.load_type_code || null,
+    load_type_desc:          row.load_type_desc || row.load_type_code || null,
+    preferred_location_code: row.preferred_location_code || null,
+    preferred_location_desc: row.preferred_location_desc || row.preferred_location_code || null,
+    delivery_location:       row.preferred_location_desc || row.preferred_location_code || null,
+    remarks:                 row.remarks || '',
+    order_status:            row.order_status,
+    on_hold_by:              null,
+    on_hold_reason:          null,
+    order_date:              row.order_date,
+    dispatch:                null,
   };
   if (row.dispatch_id) {
     order.dispatch = {
@@ -52,6 +77,7 @@ function toOrderShape(row) {
       vehicle_no:        row.dispatch_vehicle_number || null,
       driver_name:       row.driver_name || null,
       driver_phone:      row.driver_phone || null,
+      bilty_number:      row.bilty_number || null,
       dispatch_date:     row.dispatch_created_at || null,
       dispatch_status:   null,
       expected_delivery: null,
@@ -61,39 +87,88 @@ function toOrderShape(row) {
   return order;
 }
 
-// Fetch orders with optional dealer + date filters
+async function getAdminPhone() {
+  try {
+    const result = await pool.query(
+      `SELECT code_desc FROM odts.code_reference
+       WHERE code_type = 'system_config' AND code = 'admin_phone' LIMIT 1`
+    );
+    return result.rows.length > 0 ? result.rows[0].code_desc : null;
+  } catch (e) {
+    console.error('Error fetching admin phone:', e);
+    return null;
+  }
+}
+
+async function getDealerDailyUsage(dealerId) {
+  try {
+    const result = await pool.query(`
+      SELECT
+        COALESCE(SUM(order_quantity), 0) as used_today,
+        d.dealer_daily_limit
+      FROM odts.dealer_orders o
+      JOIN odts.dealers d ON d.dealer_id = o.dealer_id
+      WHERE o.dealer_id = $1
+        AND DATE(o.order_date) = CURRENT_DATE
+        AND o.order_status IN ('ORDER_PLACED', 'ACCEPTED', 'ON_HOLD')
+      GROUP BY d.dealer_id, d.dealer_daily_limit
+    `, [dealerId]);
+
+    if (result.rows.length === 0) {
+      const dealerResult = await pool.query(
+        'SELECT dealer_daily_limit FROM odts.dealers WHERE dealer_id = $1',
+        [dealerId]
+      );
+      const dailyLimit = dealerResult.rows.length > 0 ? dealerResult.rows[0].dealer_daily_limit : 0;
+      return {
+        used_today: 0,
+        daily_limit: dailyLimit || 0,
+        remaining: dailyLimit || 0,
+        percentage: 0
+      };
+    }
+
+    const row = result.rows[0];
+    const usedToday = parseFloat(row.used_today) || 0;
+    const dailyLimit = parseFloat(row.dealer_daily_limit) || 0;
+    const remaining = Math.max(0, dailyLimit - usedToday);
+    const percentage = dailyLimit > 0 ? (usedToday / dailyLimit) * 100 : 0;
+
+    return {
+      used_today: usedToday,
+      daily_limit: dailyLimit,
+      remaining: remaining,
+      percentage: percentage
+    };
+  } catch (e) {
+    console.error('Error calculating daily usage:', e);
+    return { used_today: 0, daily_limit: 0, remaining: 0, percentage: 0 };
+  }
+}
+
 async function fetchOrders({ dealerId, startDate, endDate }) {
   const conditions = [];
   const values = [];
   let i = 1;
-  if (dealerId) {
-    conditions.push(`o.dealer_id = $${i++}`);
-    values.push(dealerId);
-  }
-  if (startDate) {
-    conditions.push(`o.order_date >= $${i++}`);
-    values.push(`${startDate}T00:00:00`);
-  }
-  if (endDate) {
-    conditions.push(`o.order_date <= $${i++}`);
-    values.push(`${endDate}T23:59:59.999`);
-  }
+  if (dealerId)  { conditions.push(`o.dealer_id = $${i++}`);    values.push(dealerId); }
+  if (startDate) { conditions.push(`o.order_date >= $${i++}`);  values.push(`${startDate}T00:00:00`); }
+  if (endDate)   { conditions.push(`o.order_date <= $${i++}`);  values.push(`${endDate}T23:59:59.999`); }
   const where = conditions.length ? `WHERE ${conditions.join(' AND ')}` : '';
   const sql = `
     SELECT o.*,
            d.dealer_name,
-           p.product_name,
            dp.party_company_name, dp.party_name AS party_name_col, dp.party_phone, dp.party_address,
            lt.code_desc  AS load_type_desc,
            pl.code_desc  AS preferred_location_desc,
-           od.dispatch_id, od.dispatch_vehicle_number, od.driver_id, od.created_at AS dispatch_created_at
+           od.dispatch_id, od.dispatch_vehicle_number, od.driver_name, od.driver_phone,
+           od.bilty_number, od.actual_loading_location_code, od.created_at AS dispatch_created_at,
+           ${ITEMS_SUBQUERY}
     FROM odts.dealer_orders o
-    LEFT JOIN odts.dealers d       ON d.dealer_id  = o.dealer_id
-    LEFT JOIN odts.products p      ON p.product_id = o.product_id
-    LEFT JOIN odts.dealer_party dp ON dp.party_id  = o.party_id
+    LEFT JOIN odts.dealers       d  ON d.dealer_id  = o.dealer_id
+    LEFT JOIN odts.dealer_party  dp ON dp.party_id  = o.party_id
     LEFT JOIN odts.code_reference lt ON lt.code_type = 'loading_type'     AND lt.code = o.load_type_code
     LEFT JOIN odts.code_reference pl ON pl.code_type = 'loading_location' AND pl.code = o.preferred_location_code
-    LEFT JOIN odts.order_dispatch od ON od.order_id = o.order_id
+    LEFT JOIN odts.order_dispatch od ON od.order_id  = o.order_id
     ${where}
     ORDER BY o.order_date DESC
   `;
@@ -119,7 +194,6 @@ router.get('/orders/new', ensureDealer, (req, res) => {
 
 // ── API routes ────────────────────────────────────────────────────────────────
 
-// GET /api/admin/orders – all orders (admin/dispatcher)
 router.get('/api/admin/orders', ensureDealer, async (req, res) => {
   try {
     const { startDate, endDate } = req.query;
@@ -130,7 +204,21 @@ router.get('/api/admin/orders', ensureDealer, async (req, res) => {
   }
 });
 
-// GET /api/dealer/orders – orders for the logged-in dealer
+router.get('/api/dealer/limit', ensureDealer, async (req, res) => {
+  try {
+    const dealerId = req.session.user.dealer_id;
+    if (!dealerId) {
+      return res.status(400).json({ error: 'No dealer linked to this account' });
+    }
+    const usage = await getDealerDailyUsage(dealerId);
+    const adminPhone = await getAdminPhone();
+    res.json({ ...usage, admin_phone: adminPhone });
+  } catch (e) {
+    console.error(e);
+    res.status(500).json({ error: 'Server error' });
+  }
+});
+
 router.get('/api/dealer/orders', ensureDealer, async (req, res) => {
   try {
     const { startDate, endDate } = req.query;
@@ -143,18 +231,19 @@ router.get('/api/dealer/orders', ensureDealer, async (req, res) => {
   }
 });
 
-// GET /api/dealer/orders/by-driver/:phone
 router.get('/api/dealer/orders/by-driver/:phone', ensureDealer, async (req, res) => {
   try {
     const phone = String(req.params.phone || '').trim();
     const result = await pool.query(`
       SELECT o.*, d.dealer_name,
-             od.dispatch_id, od.dispatch_vehicle_number, od.driver_id, od.created_at
+             od.dispatch_id, od.dispatch_vehicle_number, od.driver_name, od.driver_phone,
+             od.bilty_number, od.actual_loading_location_code, od.created_at AS dispatch_created_at,
+             ${ITEMS_SUBQUERY}
       FROM odts.dealer_orders o
       LEFT JOIN odts.dealers d ON d.dealer_id = o.dealer_id
       INNER JOIN odts.order_dispatch od ON od.order_id = o.order_id
-      WHERE od.driver_id IS NOT NULL
-    `, []);
+      WHERE od.driver_phone = $1
+    `, [phone]);
     res.json(result.rows.map(toOrderShape));
   } catch (e) {
     console.error(e);
@@ -162,23 +251,23 @@ router.get('/api/dealer/orders/by-driver/:phone', ensureDealer, async (req, res)
   }
 });
 
-// GET /api/dealer/orders/:id – single order
 router.get('/api/dealer/orders/:id', ensureDealer, async (req, res) => {
   try {
     const result = await pool.query(`
-      SELECT o.*, d.dealer_name,
-             p.product_name,
+      SELECT o.*,
+             d.dealer_name,
              dp.party_company_name, dp.party_name AS party_name_col, dp.party_phone, dp.party_address,
              lt.code_desc AS load_type_desc,
              pl.code_desc AS preferred_location_desc,
-             od.dispatch_id, od.dispatch_vehicle_number, od.driver_id, od.created_at AS dispatch_created_at
+             od.dispatch_id, od.dispatch_vehicle_number, od.driver_name, od.driver_phone,
+             od.bilty_number, od.actual_loading_location_code, od.created_at AS dispatch_created_at,
+             ${ITEMS_SUBQUERY}
       FROM odts.dealer_orders o
-      LEFT JOIN odts.dealers d       ON d.dealer_id  = o.dealer_id
-      LEFT JOIN odts.products p      ON p.product_id = o.product_id
-      LEFT JOIN odts.dealer_party dp ON dp.party_id  = o.party_id
+      LEFT JOIN odts.dealers       d  ON d.dealer_id  = o.dealer_id
+      LEFT JOIN odts.dealer_party  dp ON dp.party_id  = o.party_id
       LEFT JOIN odts.code_reference lt ON lt.code_type = 'loading_type'     AND lt.code = o.load_type_code
       LEFT JOIN odts.code_reference pl ON pl.code_type = 'loading_location' AND pl.code = o.preferred_location_code
-      LEFT JOIN odts.order_dispatch od ON od.order_id = o.order_id
+      LEFT JOIN odts.order_dispatch od ON od.order_id  = o.order_id
       WHERE o.order_id = $1
     `, [parseInt(req.params.id)]);
     if (!result.rows.length) return res.status(404).json({ error: 'Order not found' });
@@ -189,7 +278,6 @@ router.get('/api/dealer/orders/:id', ensureDealer, async (req, res) => {
   }
 });
 
-// GET /api/dealer/parties – parties linked to the logged-in dealer
 router.get('/api/dealer/parties', ensureDealer, async (req, res) => {
   try {
     const dealer_id = req.session.user.dealer_id;
@@ -209,7 +297,6 @@ router.get('/api/dealer/parties', ensureDealer, async (req, res) => {
   }
 });
 
-// POST /api/dealer/parties – create a new party linked to the logged-in dealer
 router.post('/api/dealer/parties', ensureDealer, async (req, res) => {
   try {
     const dealer_id = req.session.user.dealer_id;
@@ -218,21 +305,17 @@ router.post('/api/dealer/parties', ensureDealer, async (req, res) => {
     const { party_company_name, party_phone, party_address } = req.body;
     if (!party_company_name) return res.status(400).json({ error: 'Party name is required.' });
 
-    // Auto-generate a unique party_code from company name + timestamp
     const autoCode = party_company_name.trim().toUpperCase().replace(/[^A-Z0-9]/g, '').slice(0, 8)
                      + '_' + Date.now().toString().slice(-5);
-
     const userId = req.session.user.id;
     if (!userId) return res.status(400).json({ error: 'User session invalid.' });
-
-    const createdBy = userId;
 
     const result = await pool.query(
       `INSERT INTO odts.dealer_party
          (dealer_id, party_code, party_company_name, party_phone, party_address, party_is_active_flag, created_by, created_at, updated_by, updated_at)
        VALUES ($1, $2, $3, $4, $5, TRUE, $6, NOW(), $6, NOW())
        RETURNING party_id, party_company_name, party_phone, party_address`,
-      [dealer_id, autoCode, party_company_name, party_phone || null, party_address || null, createdBy]
+      [dealer_id, autoCode, party_company_name, party_phone || null, party_address || null, userId]
     );
     res.status(201).json(result.rows[0]);
   } catch (e) {
@@ -241,7 +324,6 @@ router.post('/api/dealer/parties', ensureDealer, async (req, res) => {
   }
 });
 
-// GET /api/codes/:type – fetch code_reference rows by code_type
 router.get('/api/codes/:type', ensureDealer, async (req, res) => {
   try {
     const result = await pool.query(
@@ -256,7 +338,6 @@ router.get('/api/codes/:type', ensureDealer, async (req, res) => {
   }
 });
 
-// GET /api/dealer/products – active products for the dropdown
 router.get('/api/dealer/products', ensureDealer, async (req, res) => {
   try {
     const result = await pool.query(
@@ -270,47 +351,120 @@ router.get('/api/dealer/products', ensureDealer, async (req, res) => {
   }
 });
 
-// POST /api/dealer/orders – place a new order
+// POST /api/dealer/orders — place a new order with one or more products
 router.post('/api/dealer/orders', ensureDealer, async (req, res) => {
-  const { product_id, quantity, party_id, load_type_code, preferred_location_code } = req.body;
+  const { items, party_id, load_type_code, preferred_location_code } = req.body;
 
-  if (!product_id || !quantity) {
-    return res.status(400).json({
-      error: 'Product ID and quantity are required'
-    });
+  if (!Array.isArray(items) || items.length === 0) {
+    return res.status(400).json({ error: 'At least one product item is required' });
+  }
+  const KG_PER_BAG = 50;
+
+  for (const [idx, item] of items.entries()) {
+    if (!item.product_id) {
+      return res.status(400).json({ error: `Row ${idx + 1}: product is required` });
+    }
+    if (!item.order_bags || parseInt(item.order_bags, 10) < 1) {
+      return res.status(400).json({ error: `Row ${idx + 1}: number of bags is required` });
+    }
+    // Always compute quantity server-side from bags — ignore any client-supplied value
+    item.order_quantity = parseFloat((parseInt(item.order_bags, 10) * KG_PER_BAG / 1000).toFixed(3));
   }
 
   const dealer_id = req.session.user.dealer_id;
   if (!dealer_id) return res.status(400).json({ error: 'No dealer linked to this account.' });
 
+  const userId       = req.session.user.id;
+  const totalQty     = items.reduce((sum, i) => sum + i.order_quantity, 0);
+  const firstProduct = parseInt(items[0].product_id, 10);
+
+  // Check daily limit BEFORE placing order
+  const usage = await getDealerDailyUsage(dealer_id);
+  const projectedTotal = usage.used_today + totalQty;
+
+  if (usage.daily_limit > 0 && projectedTotal > usage.daily_limit) {
+    return res.status(400).json({
+      error: `Daily limit exceeded. Limit: ${usage.daily_limit} MT, Used today: ${usage.used_today.toFixed(3)} MT, This order: ${totalQty.toFixed(3)} MT. Remaining: ${usage.remaining.toFixed(3)} MT`,
+      daily_limit: usage.daily_limit,
+      used_today: usage.used_today,
+      remaining: usage.remaining
+    });
+  }
+
+  const client = await pool.connect();
   try {
-    const userId = req.session.user.id;
-    const result = await pool.query(`
+    await client.query('BEGIN');
+
+    const orderResult = await client.query(`
       INSERT INTO odts.dealer_orders
-        (dealer_id, product_id, order_quantity, party_id, load_type_code, preferred_location_code, order_status, order_date, created_by, created_at, updated_by, updated_at)
+        (dealer_id, product_id, order_quantity, party_id, load_type_code, preferred_location_code,
+         order_status, order_date, created_by, created_at, updated_by, updated_at)
       VALUES ($1, $2, $3, $4, $5, $6, 'ORDER_PLACED', NOW(), $7, NOW(), $7, NOW())
       RETURNING *
     `, [
       dealer_id,
-      parseInt(product_id, 10),
-      parseInt(quantity, 10),
-      party_id ? parseInt(party_id, 10) : null,
-      load_type_code || null,
+      firstProduct,
+      Math.max(1, Math.ceil(totalQty)),
+      party_id  ? parseInt(party_id, 10)   : null,
+      load_type_code          || null,
       preferred_location_code || null,
       userId,
     ]);
-    res.status(201).json(toOrderShape({ ...result.rows[0], dealer_name: req.session.user.username }));
+
+    const orderId = orderResult.rows[0].order_id;
+
+    for (const item of items) {
+      await client.query(`
+        INSERT INTO odts.dealer_order_items (order_id, product_id, order_bags, order_quantity)
+        VALUES ($1, $2, $3, $4)
+      `, [
+        orderId,
+        parseInt(item.product_id, 10),
+        item.order_bags ? parseInt(item.order_bags, 10) : null,
+        parseFloat(item.order_quantity),
+      ]);
+    }
+
+    await client.query('COMMIT');
+
+    const newUsage = usage.daily_limit > 0
+      ? { used_today: projectedTotal, daily_limit: usage.daily_limit, remaining: usage.daily_limit - projectedTotal, percentage: (projectedTotal / usage.daily_limit) * 100 }
+      : { used_today: projectedTotal, daily_limit: 0, remaining: 0, percentage: 0 };
+
+    // Send alert to admin if ≥80% threshold reached
+    if (usage.daily_limit > 0 && newUsage.percentage >= 80) {
+      const dealerResult = await pool.query('SELECT dealer_name FROM odts.dealers WHERE dealer_id = $1', [dealer_id]);
+      const dealerName = dealerResult.rows.length > 0 ? dealerResult.rows[0].dealer_name : `Dealer #${dealer_id}`;
+      const adminPhone = await getAdminPhone();
+      if (adminPhone) {
+        const alertMsg = `⚠️ Order Alert: Dealer "${dealerName}" reached ${newUsage.percentage.toFixed(0)}% of daily limit. Order #${orderId}: ${totalQty.toFixed(3)} MT. Limit: ${usage.daily_limit} MT, Remaining: ${newUsage.remaining.toFixed(3)} MT`;
+        sendAlert(adminPhone, alertMsg).catch(err => {
+          console.error('Failed to send admin alert SMS:', err);
+        });
+      }
+    }
+
+    res.status(201).json({
+      order_id:     orderId,
+      order_status: 'ORDER_PLACED',
+      order_date:   orderResult.rows[0].order_date,
+      daily_limit: newUsage.daily_limit,
+      used_today: newUsage.used_today,
+      remaining_limit: newUsage.remaining,
+      usage_percentage: newUsage.percentage
+    });
   } catch (e) {
+    await client.query('ROLLBACK');
     console.error(e);
     res.status(500).json({ error: 'Server error' });
+  } finally {
+    client.release();
   }
 });
 
-// PATCH /api/dealer/orders/:id/status
 router.patch('/api/dealer/orders/:id/status', ensureDealer, async (req, res) => {
   try {
     const { status, reason } = req.body;
-    const requesterRole = req.session.user.role;
 
     const existing = await pool.query('SELECT * FROM odts.dealer_orders WHERE order_id = $1', [parseInt(req.params.id)]);
     if (!existing.rows.length) return res.status(404).json({ error: 'Order not found' });
@@ -318,9 +472,7 @@ router.patch('/api/dealer/orders/:id/status', ensureDealer, async (req, res) => 
 
     const allowed = VALID_TRANSITIONS[order.order_status] || [];
     if (!allowed.includes(status))
-      return res.status(400).json({
-        error: `Cannot move order from "${order.order_status}" to "${status}".`
-      });
+      return res.status(400).json({ error: `Cannot move order from "${order.order_status}" to "${status}".` });
 
     const updated = await pool.query(`
       UPDATE odts.dealer_orders SET
