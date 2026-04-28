@@ -10,7 +10,7 @@ function ensureAuth(req, res, next) {
 function ensureDealer(req, res, next) {
   if (!req.session || !req.session.user) return res.redirect('/signin');
   const role = req.session.user.role;
-  if (role !== 'DEALER' && role !== 'ADMIN' && role !== 'DISPATCHER') return res.status(403).send('Access denied.');
+  if (role !== 'DEALER' && role !== 'ADMIN' && role !== 'DISPATCHER' && role !== 'OFFICE_EXECUTIVE') return res.status(403).send('Access denied.');
   return next();
 }
 
@@ -179,6 +179,32 @@ async function fetchOrders({ dealerId, startDate, endDate }) {
 
 // ── Page routes ───────────────────────────────────────────────────────────────
 
+// ── Auth middleware for office executives ───────────────────────────────────
+function ensureAdminOrOfficeExecutive(req, res, next) {
+  if (!req.session?.user) return res.redirect('/signin');
+  const role = req.session.user.role;
+  if (role !== 'ADMIN' && role !== 'OFFICE_EXECUTIVE') return res.status(403).send('Access denied.');
+  return next();
+}
+
+// ── Auth middleware for sales officers ───────────────────────────────────────
+function ensureSalesOfficer(req, res, next) {
+  if (!req.session?.user) return res.redirect('/signin');
+  const role = req.session.user.role;
+  if (role !== 'SALES_OFFICER' && role !== 'ADMIN') return res.status(403).send('Access denied.');
+  return next();
+}
+
+// ── Auth middleware for admin only ─────────────────────────────────────────────
+function ensureAdmin(req, res, next) {
+  if (!req.session?.user) return res.redirect('/signin');
+  const role = req.session.user.role;
+  if (role !== 'ADMIN') return res.status(403).send('Access denied.');
+  return next();
+}
+
+// ── Page routes ────────────────────────────────────────────────────────────
+
 router.get('/orders', ensureDealer, (req, res) => {
   const role = req.session.user.role;
   const isAdmin = role === 'ADMIN' || role === 'DISPATCHER';
@@ -186,6 +212,14 @@ router.get('/orders', ensureDealer, (req, res) => {
     return res.render('orders/new', { user: req.session.user });
   }
   res.render('orders/index', { user: req.session.user, isAdmin });
+});
+
+router.get('/office/dashboard', ensureAdminOrOfficeExecutive, (req, res) => {
+  res.render('office/dashboard', { user: req.session.user });
+});
+
+router.get('/sales/dashboard', ensureSalesOfficer, (req, res) => {
+  res.render('sales/dashboard', { user: req.session.user });
 });
 
 router.get('/orders/new', ensureDealer, (req, res) => {
@@ -226,6 +260,26 @@ router.get('/api/dealer/orders', ensureDealer, async (req, res) => {
     const role = req.session.user.role;
     const dealerId = role === 'DEALER' ? req.session.user.dealer_id : null;
     res.json(await fetchOrders({ dealerId, startDate, endDate }));
+  } catch (e) {
+    console.error(e);
+    res.status(500).json({ error: 'Server error' });
+  }
+});
+
+router.get('/api/office/orders', ensureAdminOrOfficeExecutive, async (req, res) => {
+  try {
+    const { startDate, endDate } = req.query;
+    res.json(await fetchOrders({ startDate, endDate }));
+  } catch (e) {
+    console.error(e);
+    res.status(500).json({ error: 'Server error' });
+  }
+});
+
+router.get('/api/sales/orders', ensureSalesOfficer, async (req, res) => {
+  try {
+    const { startDate, endDate } = req.query;
+    res.json(await fetchOrders({ startDate, endDate }));
   } catch (e) {
     console.error(e);
     res.status(500).json({ error: 'Server error' });
@@ -621,11 +675,12 @@ router.patch('/api/dealer/orders/:id/status', ensureDealer, async (req, res) => 
         on_hold_by_role = $${++paramCount}`;
       updateFields.push(reason?.trim() || null, req.session.user.id, role);
     } else if (status === 'ORDER_PLACED' && order.order_status === 'ON_HOLD') {
-      // Clear on_hold fields when releasing from ON_HOLD
+      // Clear on_hold fields and reset order_date when releasing from ON_HOLD
       updateSQL += `,
         on_hold_reason = NULL,
         on_hold_by = NULL,
-        on_hold_by_role = NULL`;
+        on_hold_by_role = NULL,
+        order_date = NOW()`;
     }
 
     updateSQL += ` WHERE order_id = $3 RETURNING *`;
@@ -633,6 +688,62 @@ router.patch('/api/dealer/orders/:id/status', ensureDealer, async (req, res) => 
     const updated = await pool.query(updateSQL, updateFields);
 
     res.json(toOrderShape({ ...updated.rows[0], dealer_name: req.session.user.username }));
+  } catch (e) {
+    console.error(e);
+    res.status(500).json({ error: 'Server error' });
+  }
+});
+
+// ── Report Dashboard Page Route ────────────────────────────────────────────────
+router.get('/admin/reports', ensureAdmin, (req, res) => {
+  res.render('admin/reports', { user: req.session.user });
+});
+
+// ── Reports API ────────────────────────────────────────────────────────────────
+router.get('/api/admin/reports/monthly', ensureAdmin, async (req, res) => {
+  try {
+    const { year, month } = req.query;
+    const now = new Date();
+    const reportYear = year ? parseInt(year) : now.getFullYear();
+    const reportMonth = month ? parseInt(month) : now.getMonth() + 1;
+
+    const sql = `
+      SELECT
+        d.dealer_id,
+        d.dealer_name,
+        u.user_login_name,
+        d.dealer_monthly_target,
+        d.dealer_daily_limit,
+        COALESCE(SUM(CASE
+          WHEN DATE_TRUNC('month', o.order_date) = make_date($1, $2, 1)
+            AND o.order_status != 'ON_HOLD'
+          THEN o.order_quantity ELSE 0
+        END), 0)::integer AS current_month_total,
+        COALESCE(SUM(CASE
+          WHEN DATE_TRUNC('month', o.order_date) = make_date($1, $2, 1) - INTERVAL '1 month'
+            AND o.order_status != 'ON_HOLD'
+          THEN o.order_quantity ELSE 0
+        END), 0)::integer AS last_month_total
+      FROM odts.dealers d
+      LEFT JOIN odts.users u ON u.dealer_id = d.dealer_id AND u.user_role_id = 2
+      LEFT JOIN odts.dealer_orders o ON o.dealer_id = d.dealer_id
+      GROUP BY d.dealer_id, d.dealer_name, u.user_login_name, d.dealer_monthly_target, d.dealer_daily_limit
+      ORDER BY d.dealer_name
+    `;
+
+    const result = await pool.query(sql, [reportYear, reportMonth]);
+    const reports = result.rows.map(r => {
+      const target = parseFloat(r.dealer_monthly_target) || 0;
+      const actual = r.current_month_total;
+      const achievement = target > 0 ? Math.round((actual / target) * 100) : 0;
+      return {
+        ...r,
+        achievement,
+        status: achievement >= 100 ? 'green' : achievement >= 70 ? 'orange' : 'red'
+      };
+    });
+
+    res.json({ reports, year: reportYear, month: reportMonth });
   } catch (e) {
     console.error(e);
     res.status(500).json({ error: 'Server error' });

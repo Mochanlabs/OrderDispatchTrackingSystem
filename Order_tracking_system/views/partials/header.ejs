@@ -50,6 +50,24 @@
             </li>
             <% } %>
 
+            <% if (typeof user !== 'undefined' && user && user.role === 'OFFICE_EXECUTIVE') { %>
+            <li class="nav-item">
+              <a class="nav-link" href="/office/dashboard">📊 Office Dashboard</a>
+            </li>
+            <li class="nav-item">
+              <a class="nav-link" href="/master/users">👥 Create Users</a>
+            </li>
+            <% } %>
+
+            <% if (typeof user !== 'undefined' && user && user.role === 'SALES_OFFICER') { %>
+            <li class="nav-item">
+              <a class="nav-link" href="/sales/dashboard">📊 Sales Dashboard</a>
+            </li>
+            <li class="nav-item">
+              <a class="nav-link" href="/tracking">📡 Live Tracking</a>
+            </li>
+            <% } %>
+
             <% if (typeof user !== 'undefined' && user && user.role === 'ADMIN') { %>
             <li class="nav-item">
               <a class="nav-link" href="/orders">📊 Orders &amp; Dispatch</a>
@@ -59,6 +77,7 @@
                 🗂️ Master Data
               </a>
               <ul class="dropdown-menu shadow" aria-labelledby="masterMenu">
+                <li><a class="dropdown-item" href="/admin/reports">📈 Reports</a></li>
                 <li><a class="dropdown-item" href="/master/products">📦 Products</a></li>
                 <li><a class="dropdown-item" href="/master/dealers">🏢 Dealers</a></li>
                 <li><a class="dropdown-item" href="/master/code-reference">📍 Locations</a></li>

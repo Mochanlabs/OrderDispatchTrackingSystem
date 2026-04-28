@@ -1,0 +1,202 @@
+<%- include('../partials/header') %>
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4/dist/chart.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/react@18/umd/react.development.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/react-dom@18/umd/react-dom.development.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/@babel/standalone/babel.min.js"></script>
+
+<nav aria-label="breadcrumb" class="mb-3">
+  <ol class="breadcrumb">
+    <li class="breadcrumb-item"><a href="/dashboard">Dashboard</a></li>
+    <li class="breadcrumb-item active">Report Dashboard</li>
+  </ol>
+</nav>
+<div id="app-root"></div>
+
+<script type="text/babel">
+const { useState, useEffect, useRef } = React;
+
+function ReportDashboard() {
+  const [reports, setReports] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [year, setYear] = useState(new Date().getFullYear());
+  const [month, setMonth] = useState(new Date().getMonth() + 1);
+  const chartRef = useRef(null);
+  const chartInstance = useRef(null);
+
+  const monthNames = ['January', 'February', 'March', 'April', 'May', 'June',
+    'July', 'August', 'September', 'October', 'November', 'December'];
+
+  const loadReport = async (y, m) => {
+    setLoading(true);
+    try {
+      const r = await fetch(`/api/admin/reports/monthly?year=${y}&month=${m}`, { credentials: 'include' });
+      if (!r.ok) throw new Error(await r.text());
+      const data = await r.json();
+      setReports(data.reports);
+      renderChart(data.reports);
+    } catch (e) {
+      console.error(e.message);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const renderChart = (data) => {
+    if (!chartRef.current) return;
+
+    if (chartInstance.current) chartInstance.current.destroy();
+
+    const ctx = chartRef.current.getContext('2d');
+    chartInstance.current = new Chart(ctx, {
+      type: 'bar',
+      data: {
+        labels: data.map(d => d.dealer_name),
+        datasets: [
+          {
+            label: 'Target (MT)',
+            data: data.map(d => parseFloat(d.dealer_monthly_target) || 0),
+            backgroundColor: '#0dcaf0',
+            borderColor: '#0d6efd',
+            borderWidth: 1,
+          },
+          {
+            label: 'Actual (MT)',
+            data: data.map(d => d.current_month_total),
+            backgroundColor: '#198754',
+            borderColor: '#0d6efd',
+            borderWidth: 1,
+          }
+        ]
+      },
+      options: {
+        responsive: true,
+        maintainAspectRatio: true,
+        plugins: {
+          legend: { position: 'top' },
+          title: { display: true, text: `Monthly Dealer Report — ${monthNames[month - 1]} ${year}` }
+        },
+        scales: {
+          y: { beginAtZero: true, title: { display: true, text: 'Quantity (MT)' } }
+        }
+      }
+    });
+  };
+
+  useEffect(() => {
+    loadReport(year, month);
+  }, [year, month]);
+
+  const handlePrevMonth = () => {
+    if (month === 1) {
+      setYear(year - 1);
+      setMonth(12);
+    } else {
+      setMonth(month - 1);
+    }
+  };
+
+  const handleNextMonth = () => {
+    if (month === 12) {
+      setYear(year + 1);
+      setMonth(1);
+    } else {
+      setMonth(month + 1);
+    }
+  };
+
+  return (
+    <div>
+      {/* Header & Controls */}
+      <div className="card shadow-sm mb-4">
+        <div className="card-header bg-white py-3 d-flex align-items-center justify-content-between">
+          <h5 className="mb-0 fw-semibold">📊 Monthly Dealer Report</h5>
+          <div className="d-flex gap-2 align-items-center">
+            <button className="btn btn-outline-secondary btn-sm" onClick={handlePrevMonth}>← Prev</button>
+            <span className="fw-semibold" style={{ minWidth: 200, textAlign: 'center' }}>
+              {monthNames[month - 1]} {year}
+            </span>
+            <button className="btn btn-outline-secondary btn-sm" onClick={handleNextMonth}>Next →</button>
+          </div>
+        </div>
+      </div>
+
+      {/* Chart */}
+      <div className="card shadow-sm mb-4">
+        <div className="card-body">
+          {loading ? (
+            <div className="text-center py-5">
+              <div className="spinner-border text-primary"></div>
+              <p className="text-muted mt-2">Loading report…</p>
+            </div>
+          ) : (
+            <canvas ref={chartRef} style={{ maxHeight: '400px' }}></canvas>
+          )}
+        </div>
+      </div>
+
+      {/* Table */}
+      <div className="card shadow-sm">
+        <div className="card-header bg-white py-3">
+          <h5 className="mb-0 fw-semibold">📋 Dealer Performance Details</h5>
+        </div>
+        <div className="card-body">
+          {loading ? (
+            <div className="text-center py-5">
+              <div className="spinner-border text-primary"></div>
+              <p className="text-muted mt-2">Loading report…</p>
+            </div>
+          ) : reports.length === 0 ? (
+            <div className="text-center text-muted py-5">No dealers found</div>
+          ) : (
+            <div className="table-responsive">
+              <table className="table table-hover table-bordered align-middle mb-0" style={{ fontSize: '0.9rem' }}>
+                <thead className="table-light">
+                  <tr>
+                    <th>Dealer Name</th>
+                    <th>Dealer Code</th>
+                    <th style={{ width: 100, textAlign: 'center' }}>Monthly Target</th>
+                    <th style={{ width: 100, textAlign: 'center' }}>This Month</th>
+                    <th style={{ width: 100, textAlign: 'center' }}>Last Month</th>
+                    <th style={{ width: 100, textAlign: 'center' }}>Achievement %</th>
+                    <th style={{ width: 100, textAlign: 'center' }}>Status</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {reports.map(r => (
+                    <tr key={r.dealer_id}>
+                      <td className="fw-semibold">{r.dealer_name}</td>
+                      <td className="text-muted small">{r.user_login_name || '—'}</td>
+                      <td className="text-center fw-semibold">{parseFloat(r.dealer_monthly_target || 0).toFixed(2)} MT</td>
+                      <td className="text-center fw-semibold text-success">{r.current_month_total} MT</td>
+                      <td className="text-center text-muted">{r.last_month_total} MT</td>
+                      <td className="text-center">
+                        <span className={`fw-bold ${r.status === 'green' ? 'text-success' : r.status === 'orange' ? 'text-warning' : 'text-danger'}`}>
+                          {r.achievement}%
+                        </span>
+                      </td>
+                      <td className="text-center">
+                        {r.status === 'green' && (
+                          <span className="badge bg-success">✅ On Track</span>
+                        )}
+                        {r.status === 'orange' && (
+                          <span className="badge bg-warning text-dark">⚠️ At Risk</span>
+                        )}
+                        {r.status === 'red' && (
+                          <span className="badge bg-danger">❌ Behind</span>
+                        )}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+ReactDOM.createRoot(document.getElementById('app-root')).render(<ReportDashboard />);
+</script>
+<%- include('../partials/footer') %>

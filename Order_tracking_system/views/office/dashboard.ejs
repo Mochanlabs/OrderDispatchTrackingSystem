@@ -1,0 +1,326 @@
+<%- include('../partials/header') %>
+<script src="https://cdn.jsdelivr.net/npm/react@18/umd/react.development.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/react-dom@18/umd/react-dom.development.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/@babel/standalone/babel.min.js"></script>
+
+<nav aria-label="breadcrumb" class="mb-3">
+  <ol class="breadcrumb">
+    <li class="breadcrumb-item"><a href="/dashboard">Dashboard</a></li>
+    <li class="breadcrumb-item active">Office Dashboard</li>
+  </ol>
+</nav>
+<div id="app-root"></div>
+
+<script type="text/babel">
+const { useState, useEffect } = React;
+
+const STATUS_CONFIG = {
+  ORDER_PLACED: { text: 'Order Placed', icon: '🕐', bg: '#fd7e14', tc: '#fff' },
+  ACCEPTED:     { text: 'Accepted',     icon: '✅', bg: '#0dcaf0', tc: '#000' },
+  DISPATCHED:   { text: 'Dispatched',   icon: '📦', bg: '#198754', tc: '#fff' },
+  ON_HOLD:      { text: 'On Hold',      icon: '⏸️', bg: '#e57373', tc: '#fff' },
+};
+
+function formatDateTime(value) {
+  if (!value) return '—';
+  const dt = new Date(value);
+  if (Number.isNaN(dt.getTime())) return value;
+  return new Intl.DateTimeFormat('en-IN', {
+    day: '2-digit',
+    month: 'short',
+    year: 'numeric',
+    hour: '2-digit',
+    minute: '2-digit',
+    second: '2-digit',
+    hour12: true,
+  }).format(dt);
+}
+
+function StatusBadge({ status }) {
+  const cfg = STATUS_CONFIG[status] || { bg: '#6c757d', tc: '#fff', text: status };
+  return (
+    <span className="badge" style={{ background: cfg.bg, color: cfg.tc }}>
+      {cfg.icon} {cfg.text}
+    </span>
+  );
+}
+
+function OnHoldModal({ order, onConfirm, onClose }) {
+  const [reason, setReason] = useState('');
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState('');
+
+  const handleConfirm = async () => {
+    if (!reason.trim()) {
+      setError('Hold reason is required');
+      return;
+    }
+    setSaving(true);
+    await onConfirm(reason.trim());
+    setSaving(false);
+  };
+
+  return (
+    <div className="modal d-block" tabIndex="-1" style={{ background: 'rgba(0,0,0,0.5)' }}>
+      <div className="modal-dialog modal-dialog-centered">
+        <div className="modal-content">
+          <div className="modal-header bg-warning">
+            <h5 className="modal-title">⏸️ Put Order #{order.order_id} On Hold</h5>
+            <button type="button" className="btn-close" onClick={onClose}></button>
+          </div>
+          <div className="modal-body">
+            <p className="text-muted mb-3 small">This order will be paused. You must provide a reason.</p>
+            {error && <div className="alert alert-danger py-2 px-3 mb-3">{error}</div>}
+            <div className="mb-1">
+              <label className="form-label fw-semibold">
+                Reason <span className="text-danger">*</span>
+              </label>
+              <textarea
+                className="form-control"
+                rows="3"
+                placeholder="e.g. Awaiting payment, party request, etc."
+                value={reason}
+                onChange={e => { setReason(e.target.value); setError(''); }}
+              />
+            </div>
+          </div>
+          <div className="modal-footer">
+            <button type="button" className="btn btn-secondary" onClick={onClose}>Cancel</button>
+            <button type="button" className="btn btn-warning" disabled={saving || !reason.trim()}
+              onClick={handleConfirm}>
+              {saving && <span className="spinner-border spinner-border-sm me-1"></span>}
+              Confirm Hold
+            </button>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function App() {
+  const [orders, setOrders] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [search, setSearch] = useState('');
+  const [statusFilter, setStatusFilter] = useState('ORDER_PLACED,ACCEPTED,ON_HOLD');
+  const [toast, setToast] = useState({ msg: '', type: 'success' });
+  const [holdOrder, setHoldOrder] = useState(null);
+
+  const notify = (msg, type = 'success') => {
+    setToast({ msg, type });
+    setTimeout(() => setToast({ msg: '' }), 4000);
+  };
+
+  const load = async () => {
+    setLoading(true);
+    try {
+      const params = new URLSearchParams();
+      params.set('startDate', new Date().toISOString().slice(0, 10));
+      params.set('endDate', new Date().toISOString().slice(0, 10));
+      const r = await fetch(`/api/office/orders?${params.toString()}`, { credentials: 'include' });
+      if (!r.ok) throw new Error(await r.text());
+      setOrders(await r.json());
+    } catch (e) {
+      notify(e.message, 'danger');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    load();
+  }, []);
+
+  const changeStatus = async (orderId, newStatus, extra = {}) => {
+    try {
+      const res = await fetch(`/api/dealer/orders/${orderId}/status`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        credentials: 'include',
+        body: JSON.stringify({ status: newStatus, ...extra })
+      });
+      const d = await res.json();
+      if (!res.ok) throw new Error(d.error);
+      notify(`Order #${orderId} → ${STATUS_CONFIG[newStatus]?.text}`);
+      load();
+    } catch(e) { notify(e.message, 'danger'); }
+  };
+
+  const handleHold = async (reason) => {
+    await changeStatus(holdOrder.order_id, 'ON_HOLD', { reason });
+    setHoldOrder(null);
+  };
+
+  const groupedByDealer = orders.reduce((acc, o) => {
+    const dealerId = o.dealer_id;
+    if (!acc[dealerId]) {
+      acc[dealerId] = { dealer_name: o.dealer_name, orders: [] };
+    }
+    acc[dealerId].orders.push(o);
+    return acc;
+  }, {});
+
+  const filtered = orders.filter(o => {
+    const matchSearch = (o.product_name + ' ' + o.delivery_location + ' ' + o.order_id)
+      .toLowerCase().includes(search.toLowerCase());
+    const matchStatus = statusFilter.split(',').includes(o.order_status);
+    return matchSearch && matchStatus;
+  });
+
+  const counts = {
+    total: orders.length,
+    orderPlaced: orders.filter(o => o.order_status === 'ORDER_PLACED').length,
+    onHold: orders.filter(o => o.order_status === 'ON_HOLD').length,
+  };
+
+  return (
+    <div>
+      {toast.msg && (
+        <div className={`alert alert-${toast.type} alert-dismissible mb-3`}>
+          {toast.msg}
+          <button className="btn-close" onClick={() => setToast({ msg: '' })}></button>
+        </div>
+      )}
+
+      {/* Summary Cards */}
+      <div className="row mb-3">
+        <div className="col-6 col-md-3 mb-3">
+          <div className="card border-0 shadow-sm h-100" style={{ borderLeft: '4px solid #0d6efd' }}>
+            <div className="card-body d-flex align-items-center gap-3 py-3">
+              <div style={{ fontSize: '2rem' }}>📋</div>
+              <div>
+                <div className="fs-4 fw-bold">{counts.total}</div>
+                <div className="text-muted small">Total Orders</div>
+              </div>
+            </div>
+          </div>
+        </div>
+        <div className="col-6 col-md-3 mb-3">
+          <div className="card border-0 shadow-sm h-100" style={{ borderLeft: '4px solid #fd7e14' }}>
+            <div className="card-body d-flex align-items-center gap-3 py-3">
+              <div style={{ fontSize: '2rem' }}>🕐</div>
+              <div>
+                <div className="fs-4 fw-bold">{counts.orderPlaced}</div>
+                <div className="text-muted small">Order Placed</div>
+              </div>
+            </div>
+          </div>
+        </div>
+        <div className="col-6 col-md-3 mb-3">
+          <div className="card border-0 shadow-sm h-100" style={{ borderLeft: '4px solid #e57373' }}>
+            <div className="card-body d-flex align-items-center gap-3 py-3">
+              <div style={{ fontSize: '2rem' }}>⏸️</div>
+              <div>
+                <div className="fs-4 fw-bold">{counts.onHold}</div>
+                <div className="text-muted small">On Hold</div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      {/* Orders by Dealer */}
+      <div className="card shadow-sm">
+        <div className="card-header bg-white d-flex align-items-center justify-content-between py-3">
+          <h5 className="mb-0 fw-semibold">📊 Orders by Dealer</h5>
+        </div>
+        <div className="card-body">
+          <div className="row mb-3 g-2">
+            <div className="col-md-6">
+              <input className="form-control" placeholder="Search by product, order ID…"
+                value={search} onChange={e => setSearch(e.target.value)} />
+            </div>
+            <div className="col-md-6">
+              <div className="btn-group w-100" role="group">
+                <input type="radio" className="btn-check" name="status" id="status-all" value="ORDER_PLACED,ACCEPTED,ON_HOLD"
+                  checked={statusFilter === 'ORDER_PLACED,ACCEPTED,ON_HOLD'}
+                  onChange={e => setStatusFilter(e.target.value)} />
+                <label className="btn btn-outline-primary" htmlFor="status-all">All</label>
+
+                <input type="radio" className="btn-check" name="status" id="status-placed" value="ORDER_PLACED"
+                  checked={statusFilter === 'ORDER_PLACED'}
+                  onChange={e => setStatusFilter(e.target.value)} />
+                <label className="btn btn-outline-primary" htmlFor="status-placed">Order Placed</label>
+
+                <input type="radio" className="btn-check" name="status" id="status-hold" value="ON_HOLD"
+                  checked={statusFilter === 'ON_HOLD'}
+                  onChange={e => setStatusFilter(e.target.value)} />
+                <label className="btn btn-outline-primary" htmlFor="status-hold">On Hold</label>
+              </div>
+            </div>
+          </div>
+
+          {loading ? (
+            <div className="text-center py-5">
+              <div className="spinner-border text-primary"></div>
+              <p className="text-muted mt-2">Loading orders…</p>
+            </div>
+          ) : filtered.length === 0 ? (
+            <div className="text-center text-muted py-5">No orders found</div>
+          ) : (
+            <div className="table-responsive">
+              <table className="table table-hover table-bordered align-middle mb-0">
+                <thead className="table-light">
+                  <tr>
+                    <th style={{ width: 90 }}>Order Id</th>
+                    <th>Dealer</th>
+                    <th>Product</th>
+                    <th style={{ width: 100 }}>Qty</th>
+                    <th>Party</th>
+                    <th style={{ width: 110 }}>Order Date</th>
+                    <th style={{ width: 130, textAlign: 'center' }}>Status</th>
+                    <th style={{ width: 200, textAlign: 'center' }}>Action</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {filtered.map(o => (
+                    <tr key={o.order_id}>
+                      <td className="fw-semibold text-primary">#{o.order_id}</td>
+                      <td className="text-muted small">{o.dealer_name || '—'}</td>
+                      <td>{o.product_name}</td>
+                      <td>{o.quantity} {o.unit}</td>
+                      <td>{o.party_name || <span className="text-muted">—</span>}</td>
+                      <td>{formatDateTime(o.order_date)}</td>
+                      <td className="text-center">
+                        <div>
+                          <StatusBadge status={o.order_status} />
+                          {o.order_status === 'ON_HOLD' && o.on_hold_reason && (
+                            <div className="text-muted small mt-2" style={{ fontSize: '0.75rem', maxWidth: 150, margin: '0 auto' }}>
+                              💬 {o.on_hold_reason}
+                            </div>
+                          )}
+                        </div>
+                      </td>
+                      <td className="text-center">
+                        <div className="d-flex justify-content-center gap-2 flex-wrap">
+                          {o.order_status === 'ORDER_PLACED' && (
+                            <button className="btn btn-outline-secondary btn-sm" title="Put order on hold" onClick={() => setHoldOrder(o)}>On Hold</button>
+                          )}
+                          {o.order_status === 'ON_HOLD' && (
+                            <button className="btn btn-warning btn-sm" title="Unhold order" onClick={() => changeStatus(o.order_id, 'ORDER_PLACED')}>Unhold</button>
+                          )}
+                          {o.order_status === 'ACCEPTED' && (
+                            <span className="text-muted small">🔒 Accepted</span>
+                          )}
+                          {o.order_status === 'DISPATCHED' && (
+                            <span className="text-success small fw-semibold">📦 Dispatched</span>
+                          )}
+                        </div>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
+        </div>
+      </div>
+
+      {holdOrder && <OnHoldModal order={holdOrder} onConfirm={handleHold} onClose={() => setHoldOrder(null)} />}
+    </div>
+  );
+}
+
+ReactDOM.createRoot(document.getElementById('app-root')).render(<App />);
+</script>
+<%- include('../partials/footer') %>
