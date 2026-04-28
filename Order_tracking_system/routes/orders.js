@@ -66,8 +66,9 @@ function toOrderShape(row) {
     delivery_location:       row.preferred_location_desc || row.preferred_location_code || null,
     remarks:                 row.remarks || '',
     order_status:            row.order_status,
-    on_hold_by:              null,
-    on_hold_reason:          null,
+    on_hold_by:              row.on_hold_by || null,
+    on_hold_reason:          row.on_hold_reason || null,
+    on_hold_by_role:         row.on_hold_by_role || null,
     order_date:              row.order_date,
     dispatch:                null,
   };
@@ -351,6 +352,126 @@ router.get('/api/dealer/products', ensureDealer, async (req, res) => {
   }
 });
 
+// GET /api/admin/parties/:dealer_id — get parties for a specific dealer (admin-only)
+router.get('/api/admin/parties/:dealer_id', ensureDealer, async (req, res) => {
+  try {
+    const role = req.session.user.role;
+    if (role !== 'ADMIN') return res.status(403).json({ error: 'Only admins can access this' });
+
+    const dealerId = parseInt(req.params.dealer_id);
+    const result = await pool.query(`
+      SELECT party_id, party_code, party_company_name, party_name, party_phone, party_address, party_is_active_flag
+      FROM odts.dealer_party
+      WHERE dealer_id = $1
+      ORDER BY party_company_name
+    `, [dealerId]);
+    res.json(result.rows);
+  } catch (e) {
+    console.error(e);
+    res.status(500).json({ error: 'Server error' });
+  }
+});
+
+// POST /api/admin/orders/on-behalf — admin create order for a dealer
+router.post('/api/admin/orders/on-behalf', ensureDealer, async (req, res) => {
+  try {
+    const role = req.session.user.role;
+    if (role !== 'ADMIN') return res.status(403).json({ error: 'Only admins can create orders on behalf' });
+
+    const { items, dealer_id, party_id, load_type_code, preferred_location_code } = req.body;
+
+    if (!Array.isArray(items) || items.length === 0) {
+      return res.status(400).json({ error: 'At least one product item is required' });
+    }
+    if (!dealer_id) {
+      return res.status(400).json({ error: 'Dealer ID is required' });
+    }
+
+    const KG_PER_BAG = 50;
+
+    for (const [idx, item] of items.entries()) {
+      if (!item.product_id) {
+        return res.status(400).json({ error: `Row ${idx + 1}: product is required` });
+      }
+      if (!item.order_bags || parseInt(item.order_bags, 10) < 1) {
+        return res.status(400).json({ error: `Row ${idx + 1}: number of bags is required` });
+      }
+      item.order_quantity = parseFloat((parseInt(item.order_bags, 10) * KG_PER_BAG / 1000).toFixed(3));
+    }
+
+    const totalQty = items.reduce((sum, i) => sum + i.order_quantity, 0);
+    const firstProduct = parseInt(items[0].product_id, 10);
+
+    // Check daily limit for this dealer
+    const usage = await getDealerDailyUsage(dealer_id);
+    const projectedTotal = usage.used_today + totalQty;
+
+    if (usage.daily_limit > 0 && projectedTotal > usage.daily_limit) {
+      return res.status(400).json({
+        error: `Daily limit exceeded for this dealer. Limit: ${usage.daily_limit} MT, Used today: ${usage.used_today.toFixed(3)} MT, This order: ${totalQty.toFixed(3)} MT. Remaining: ${usage.remaining.toFixed(3)} MT`,
+        daily_limit: usage.daily_limit,
+        used_today: usage.used_today,
+        remaining: usage.remaining
+      });
+    }
+
+    const client = await pool.connect();
+    try {
+      await client.query('BEGIN');
+
+      const orderResult = await client.query(`
+        INSERT INTO odts.dealer_orders
+          (dealer_id, product_id, order_quantity, party_id, load_type_code, preferred_location_code,
+           order_status, order_date, created_by, created_at, updated_by, updated_at)
+        VALUES ($1, $2, $3, $4, $5, $6, 'ORDER_PLACED', NOW(), $7, NOW(), $7, NOW())
+        RETURNING *
+      `, [
+        dealer_id,
+        firstProduct,
+        Math.max(1, Math.ceil(totalQty)),
+        party_id ? parseInt(party_id, 10) : null,
+        load_type_code || null,
+        preferred_location_code || null,
+        req.session.user.id,
+      ]);
+
+      const orderId = orderResult.rows[0].order_id;
+
+      for (const item of items) {
+        await client.query(`
+          INSERT INTO odts.dealer_order_items (order_id, product_id, order_bags, order_quantity)
+          VALUES ($1, $2, $3, $4)
+        `, [
+          orderId,
+          parseInt(item.product_id, 10),
+          item.order_bags ? parseInt(item.order_bags, 10) : null,
+          parseFloat(item.order_quantity),
+        ]);
+      }
+
+      await client.query('COMMIT');
+
+      res.status(201).json({
+        order_id: orderId,
+        order_status: 'ORDER_PLACED',
+        order_date: orderResult.rows[0].order_date,
+        daily_limit: usage.daily_limit,
+        used_today: projectedTotal,
+        remaining_limit: Math.max(0, usage.daily_limit - projectedTotal),
+        usage_percentage: usage.daily_limit > 0 ? (projectedTotal / usage.daily_limit) * 100 : 0
+      });
+    } catch (e) {
+      await client.query('ROLLBACK');
+      throw e;
+    } finally {
+      client.release();
+    }
+  } catch (e) {
+    console.error(e);
+    res.status(500).json({ error: 'Server error' });
+  }
+});
+
 // POST /api/dealer/orders — place a new order with one or more products
 router.post('/api/dealer/orders', ensureDealer, async (req, res) => {
   const { items, party_id, load_type_code, preferred_location_code } = req.body;
@@ -465,6 +586,7 @@ router.post('/api/dealer/orders', ensureDealer, async (req, res) => {
 router.patch('/api/dealer/orders/:id/status', ensureDealer, async (req, res) => {
   try {
     const { status, reason } = req.body;
+    const role = req.session.user.role;
 
     const existing = await pool.query('SELECT * FROM odts.dealer_orders WHERE order_id = $1', [parseInt(req.params.id)]);
     if (!existing.rows.length) return res.status(404).json({ error: 'Order not found' });
@@ -474,14 +596,41 @@ router.patch('/api/dealer/orders/:id/status', ensureDealer, async (req, res) => 
     if (!allowed.includes(status))
       return res.status(400).json({ error: `Cannot move order from "${order.order_status}" to "${status}".` });
 
-    const updated = await pool.query(`
+    // Role-based reason validation: mandatory for ADMIN/DISPATCHER/OFFICE_EXECUTIVE, optional for DEALER
+    if (status === 'ON_HOLD') {
+      const isAdminRole = ['ADMIN', 'DISPATCHER', 'OFFICE_EXECUTIVE'].includes(role);
+      if (isAdminRole && !reason?.trim()) {
+        return res.status(400).json({ error: 'Hold reason is required for admin/dispatcher' });
+      }
+    }
+
+    // Prepare update fields
+    let updateFields = [status, req.session.user.id, parseInt(req.params.id)];
+    let updateSQL = `
       UPDATE odts.dealer_orders SET
         order_status = $1,
         updated_by   = $2,
-        updated_at   = NOW()
-      WHERE order_id = $3
-      RETURNING *
-    `, [status, req.session.user.id, parseInt(req.params.id)]);
+        updated_at   = NOW()`;
+    let paramCount = 3;
+
+    // Add on_hold fields when transitioning to ON_HOLD
+    if (status === 'ON_HOLD') {
+      updateSQL += `,
+        on_hold_reason = $${++paramCount},
+        on_hold_by = $${++paramCount},
+        on_hold_by_role = $${++paramCount}`;
+      updateFields.push(reason?.trim() || null, req.session.user.id, role);
+    } else if (status === 'ORDER_PLACED' && order.order_status === 'ON_HOLD') {
+      // Clear on_hold fields when releasing from ON_HOLD
+      updateSQL += `,
+        on_hold_reason = NULL,
+        on_hold_by = NULL,
+        on_hold_by_role = NULL`;
+    }
+
+    updateSQL += ` WHERE order_id = $3 RETURNING *`;
+
+    const updated = await pool.query(updateSQL, updateFields);
 
     res.json(toOrderShape({ ...updated.rows[0], dealer_name: req.session.user.username }));
   } catch (e) {

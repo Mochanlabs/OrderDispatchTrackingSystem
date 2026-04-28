@@ -185,6 +185,9 @@ function App(){
   const [sortCol,setSortCol]=useState('dealer_id'); const [sortAsc,setSortAsc]=useState(true);
   const [bulkUploading,setBulkUploading]=useState(false);
   const [partyDealer,setPartyDealer]=useState(null);
+  const [inlineEdit,setInlineEdit]=useState(null);
+  const [inlineEditValue,setInlineEditValue]=useState('');
+  const [inlineEditSaving,setInlineEditSaving]=useState(false);
   const fileRef=React.useRef(null);
 
   const notify=(msg,type='success')=>{setToast({msg,type});setTimeout(()=>setToast({msg:''}),4000);};
@@ -226,6 +229,36 @@ function App(){
     try{const res=await fetch(editId?`/api/dealers/${editId}`:'/api/dealers',{method:editId?'PUT':'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(form)});
     const d=await res.json();if(!res.ok)throw new Error(d.error);notify(editId?'Updated':'Added');setShowModal(false);setTimeout(()=>window.location.reload(),800);}
     catch(e){notify(e.message,'danger');}finally{setSaving(false);}};
+
+  const startInlineEdit=(dealerId,field,currentValue)=>{
+    setInlineEdit({dealerId,field});
+    setInlineEditValue(currentValue.toString());
+  };
+
+  const saveInlineEdit=async()=>{
+    if(!inlineEdit) return;
+    setInlineEditSaving(true);
+    try{
+      const updatePayload={};
+      updatePayload[inlineEdit.field]=parseFloat(inlineEditValue)||0;
+      const res=await fetch(`/api/dealers/${inlineEdit.dealerId}`,{
+        method:'PUT',
+        headers:{'Content-Type':'application/json'},
+        body:JSON.stringify({
+          dealer_name:rows.find(r=>r.dealer_id===inlineEdit.dealerId)?.dealer_name,
+          dealer_company_name:rows.find(r=>r.dealer_id===inlineEdit.dealerId)?.dealer_company_name,
+          ...updatePayload
+        })
+      });
+      const d=await res.json();
+      if(!res.ok)throw new Error(d.error);
+      setRows(rows.map(r=>r.dealer_id===inlineEdit.dealerId?{...r,[inlineEdit.field]:parseFloat(inlineEditValue)||0}:r));
+      notify('Limit updated');
+      setInlineEdit(null);
+    }catch(e){notify(e.message,'danger');}finally{setInlineEditSaving(false);}
+  };
+
+  const cancelInlineEdit=()=>{setInlineEdit(null);setInlineEditValue('');};
 
   const sort=(col)=>{if(sortCol===col)setSortAsc(!sortAsc);else{setSortCol(col);setSortAsc(true);}};
   const SI=({col})=>sortCol===col?<span className="ms-1">{sortAsc?'↑':'↓'}</span>:<span className="text-muted ms-1">⇅</span>;
@@ -275,8 +308,24 @@ function App(){
                 <td className="fw-semibold">{r.dealer_code||<span className="text-muted">—</span>}</td>
                 <td className="fw-semibold">{r.dealer_name}</td>
                 <td>{r.dealer_company_name||<span className="text-muted">—</span>}</td>
-                <td className="text-end">{r.dealer_daily_limit!=null?Number(r.dealer_daily_limit).toLocaleString():<span className="text-muted">—</span>}</td>
-                <td className="text-end">{r.dealer_monthly_target!=null?Number(r.dealer_monthly_target).toLocaleString():<span className="text-muted">—</span>}</td>
+                <td className="text-end" onClick={()=>startInlineEdit(r.dealer_id,'dealer_daily_limit',r.dealer_daily_limit||0)} style={{cursor:'pointer',padding:'0.5rem'}}>
+                  {inlineEdit?.dealerId===r.dealer_id && inlineEdit?.field==='dealer_daily_limit'
+                    ?<div className="d-flex align-items-center gap-1">
+                      <input type="number" min="0" step="0.01" className="form-control form-control-sm" style={{width:'80px'}} value={inlineEditValue} onChange={e=>setInlineEditValue(e.target.value)} autoFocus onKeyDown={e=>{if(e.key==='Enter')saveInlineEdit();if(e.key==='Escape')cancelInlineEdit();}} onBlur={saveInlineEdit}/>
+                      {inlineEditSaving&&<span className="spinner-border spinner-border-sm ms-1"></span>}
+                    </div>
+                    :<div style={{minWidth:'60px'}}>{r.dealer_daily_limit!=null?Number(r.dealer_daily_limit).toLocaleString():<span className="text-muted">—</span>} <span className="text-muted small">✎</span></div>
+                  }
+                </td>
+                <td className="text-end" onClick={()=>startInlineEdit(r.dealer_id,'dealer_monthly_target',r.dealer_monthly_target||0)} style={{cursor:'pointer',padding:'0.5rem'}}>
+                  {inlineEdit?.dealerId===r.dealer_id && inlineEdit?.field==='dealer_monthly_target'
+                    ?<div className="d-flex align-items-center gap-1">
+                      <input type="number" min="0" step="0.01" className="form-control form-control-sm" style={{width:'80px'}} value={inlineEditValue} onChange={e=>setInlineEditValue(e.target.value)} autoFocus onKeyDown={e=>{if(e.key==='Enter')saveInlineEdit();if(e.key==='Escape')cancelInlineEdit();}} onBlur={saveInlineEdit}/>
+                      {inlineEditSaving&&<span className="spinner-border spinner-border-sm ms-1"></span>}
+                    </div>
+                    :<div style={{minWidth:'60px'}}>{r.dealer_monthly_target!=null?Number(r.dealer_monthly_target).toLocaleString():<span className="text-muted">—</span>} <span className="text-muted small">✎</span></div>
+                  }
+                </td>
                 <td>{r.dealer_phone||<span className="text-muted">—</span>}</td>
                 <td className="text-center">{r.dealer_is_active_flag?<span className="badge bg-success">Active</span>:<span className="badge bg-secondary">Inactive</span>}</td>
                 <td className="text-center"><button className="btn btn-outline-primary btn-sm" onClick={()=>openEdit(r)}>Edit</button></td>

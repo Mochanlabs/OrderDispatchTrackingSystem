@@ -52,9 +52,21 @@ function StatusBadge({ status }) {
   );
 }
 
-function OnHoldModal({ order, onConfirm, onClose }) {
+function OnHoldModal({ order, onConfirm, onClose, requireReason }) {
   const [reason, setReason] = React.useState('');
   const [saving, setSaving] = React.useState(false);
+  const [error, setError] = React.useState('');
+
+  const handleConfirm = async () => {
+    if (requireReason && !reason.trim()) {
+      setError('Hold reason is required');
+      return;
+    }
+    setSaving(true);
+    await onConfirm(reason.trim());
+    setSaving(false);
+  };
+
   return (
     <div className="modal d-block" tabIndex="-1" style={{ background: 'rgba(0,0,0,0.5)' }}>
       <div className="modal-dialog modal-dialog-centered">
@@ -64,22 +76,26 @@ function OnHoldModal({ order, onConfirm, onClose }) {
             <button type="button" className="btn-close" onClick={onClose}></button>
           </div>
           <div className="modal-body">
-            <p className="text-muted mb-3 small">This order will be paused. Only you can reopen it. Orders that are <strong>Accepted</strong> or <strong>Dispatched</strong> cannot be put on hold.</p>
+            <p className="text-muted mb-3 small">This order will be paused. {requireReason ? 'You must provide a reason.' : 'Only you can reopen it.'} Orders that are <strong>Accepted</strong> or <strong>Dispatched</strong> cannot be put on hold.</p>
+            {error && <div className="alert alert-danger py-2 px-3 mb-3">{error}</div>}
             <div className="mb-1">
-              <label className="form-label fw-semibold">Reason <span className="text-muted fw-normal small">(optional)</span></label>
+              <label className="form-label fw-semibold">
+                Reason {requireReason && <span className="text-danger">*</span>}
+                {!requireReason && <span className="text-muted fw-normal small">(optional)</span>}
+              </label>
               <textarea
                 className="form-control"
                 rows="3"
-                placeholder="e.g. Awaiting yard space, pending payment…"
+                placeholder="e.g. Awaiting yard space, pending payment, Party request…"
                 value={reason}
-                onChange={e => setReason(e.target.value)}
+                onChange={e => { setReason(e.target.value); setError(''); }}
               />
             </div>
           </div>
           <div className="modal-footer">
             <button type="button" className="btn btn-secondary" onClick={onClose}>Cancel</button>
-            <button type="button" className="btn btn-warning" disabled={saving}
-              onClick={async () => { setSaving(true); await onConfirm(reason.trim()); setSaving(false); }}>
+            <button type="button" className="btn btn-warning" disabled={saving || (requireReason && !reason.trim())}
+              onClick={handleConfirm}>
               {saving && <span className="spinner-border spinner-border-sm me-1"></span>}
               Confirm Hold
             </button>
@@ -224,10 +240,11 @@ function DispatchModal({ order, onClose }) {
                 </div>
               )}
               {order.on_hold_reason && (
-                <div className="col-md-8">
+                <div className="col-12">
                   <div className="p-3 bg-warning bg-opacity-10 rounded border border-warning">
-                    <div className="text-muted small">On Hold Reason</div>
+                    <div className="text-muted small">⏸️ On Hold Reason</div>
                     <div className="fw-semibold">{order.on_hold_reason}</div>
+                    {order.on_hold_by && <div className="text-muted small mt-1">By: {order.on_hold_by_role || 'Unknown'}</div>}
                   </div>
                 </div>
               )}
@@ -349,6 +366,282 @@ function DispatchModal({ order, onClose }) {
   );
 }
 
+function CreateForDealerModal({ onClose, onSaved }) {
+  const [dealers, setDealers] = useState([]);
+  const [products, setProducts] = useState([]);
+  const [parties, setParties] = useState([]);
+  const [loadTypes, setLoadTypes] = useState([]);
+  const [prefLocations, setPrefLocations] = useState([]);
+  const [selectedDealerId, setSelectedDealerId] = useState('');
+  const [items, setItems] = useState([{ product_id: '', order_bags: '' }]);
+  const [partyId, setPartyId] = useState('');
+  const [contactNumber, setContactNumber] = useState('');
+  const [deliveryAddress, setDeliveryAddress] = useState('');
+  const [loadType, setLoadType] = useState('');
+  const [prefLocation, setPrefLocation] = useState('');
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState('');
+
+  useEffect(() => {
+    Promise.all([
+      fetch('/api/dealers').then(r => r.json()),
+      fetch('/api/dealer/products').then(r => r.json()),
+      fetch('/api/codes/loading_type').then(r => r.json()),
+      fetch('/api/codes/loading_location').then(r => r.json())
+    ]).then(([d, p, lt, pl]) => {
+      setDealers(d);
+      setProducts(p);
+      setLoadTypes(lt || []);
+      setPrefLocations(pl || []);
+    }).catch(e => console.error(e));
+  }, []);
+
+  const handleDealerChange = async (e) => {
+    const dealerId = e.target.value;
+    setSelectedDealerId(dealerId);
+    if (dealerId) {
+      try {
+        const r = await fetch(`/api/admin/parties/${dealerId}`);
+        const p = await r.json();
+        setParties(p);
+        setPartyId('');
+        setContactNumber('');
+        setDeliveryAddress('');
+      } catch (err) {
+        console.error('Failed to load parties:', err);
+      }
+    } else {
+      setParties([]);
+    }
+  };
+
+  const handlePartyChange = (e) => {
+    const pId = e.target.value;
+    setPartyId(pId);
+    const selected = parties.find(p => String(p.party_id) === pId);
+    if (selected) {
+      setContactNumber(selected.party_phone || '');
+      setDeliveryAddress(selected.party_address || '');
+    } else {
+      setContactNumber('');
+      setDeliveryAddress('');
+    }
+  };
+
+  const updateItem = (idx, field, value) => {
+    const newItems = [...items];
+    newItems[idx][field] = value;
+    setItems(newItems);
+  };
+
+  const removeItem = (idx) => {
+    if (items.length > 1) {
+      setItems(items.filter((_, i) => i !== idx));
+    }
+  };
+
+  const addItem = () => {
+    setItems([...items, { product_id: '', order_bags: '' }]);
+  };
+
+  const calculateQuantity = (bags) => {
+    if (!bags) return 0;
+    return parseFloat(((parseInt(bags) * 50) / 1000).toFixed(3));
+  };
+
+  const totalQty = items.reduce((sum, i) => sum + calculateQuantity(i.order_bags), 0);
+
+  const submit = async (e) => {
+    e.preventDefault();
+    if (!selectedDealerId) {
+      setError('Please select a dealer');
+      return;
+    }
+    if (items.some(i => !i.product_id || !i.order_bags)) {
+      setError('All products must have a value for bags');
+      return;
+    }
+    setSaving(true); setError('');
+    try {
+      const res = await fetch('/api/admin/orders/on-behalf', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          items,
+          dealer_id: parseInt(selectedDealerId),
+          party_id: partyId ? parseInt(partyId) : null,
+          load_type_code: loadType || null,
+          preferred_location_code: prefLocation || null
+        })
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || 'Failed to place order');
+
+      // Fetch complete order details to display in list
+      const fullOrderRes = await fetch(`/api/dealer/orders/${data.order_id}`);
+      const fullOrder = await fullOrderRes.json();
+      onSaved(fullOrder);
+      onClose();
+    } catch (err) {
+      setError(err.message);
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  return (
+    <div className="modal d-block" tabIndex="-1" style={{ background: 'rgba(0,0,0,0.5)' }}>
+      <div className="modal-dialog modal-dialog-centered modal-lg">
+        <div className="modal-content">
+          <form onSubmit={submit}>
+            <div className="modal-header bg-primary text-white">
+              <h5 className="modal-title">🛒 Create Order on Dealer's Behalf</h5>
+              <button type="button" className="btn-close btn-close-white" onClick={onClose}></button>
+            </div>
+            <div className="modal-body">
+              {error && <div className="alert alert-danger py-2">{error}</div>}
+
+              {/* Dealer Selection */}
+              <div className="mb-3">
+                <label className="form-label fw-semibold">Dealer <span className="text-danger">*</span></label>
+                <select className="form-select" value={selectedDealerId} onChange={handleDealerChange} required>
+                  <option value="">Select a dealer...</option>
+                  {dealers.map(d => <option key={d.dealer_id} value={d.dealer_id}>{d.dealer_name} ({d.dealer_code})</option>)}
+                </select>
+              </div>
+
+              {/* Products Section */}
+              <div className="mb-3">
+                <label className="form-label fw-semibold">Products &amp; Quantities <span className="text-danger">*</span></label>
+                <div className="table-responsive">
+                  <table className="table table-sm table-bordered mb-0">
+                    <thead className="table-light">
+                      <tr>
+                        <th>Product</th>
+                        <th style={{ width: 100 }}>No. of Bags</th>
+                        <th style={{ width: 100 }}>Qty (MT)</th>
+                        <th style={{ width: 50, textAlign: 'center' }}>Action</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {items.map((item, idx) => (
+                        <tr key={idx}>
+                          <td>
+                            <select
+                              className="form-select form-select-sm"
+                              value={item.product_id}
+                              onChange={(e) => updateItem(idx, 'product_id', e.target.value)}
+                              required>
+                              <option value="">Select product...</option>
+                              {products.map(p => <option key={p.product_id} value={p.product_id}>{p.product_name}</option>)}
+                            </select>
+                          </td>
+                          <td>
+                            <input
+                              type="number"
+                              min="1"
+                              className="form-control form-control-sm"
+                              value={item.order_bags}
+                              onChange={(e) => updateItem(idx, 'order_bags', e.target.value)}
+                              placeholder="0"
+                              required />
+                          </td>
+                          <td className="align-middle fw-semibold">
+                            {calculateQuantity(item.order_bags).toFixed(3)} MT
+                          </td>
+                          <td className="text-center align-middle">
+                            <button
+                              type="button"
+                              className="btn btn-sm btn-outline-danger"
+                              onClick={() => removeItem(idx)}
+                              disabled={items.length === 1}>
+                              ✕
+                            </button>
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                    {items.length > 0 && (
+                      <tfoot>
+                        <tr className="table-secondary fw-bold">
+                          <td colSpan={2} className="text-muted small">Total</td>
+                          <td>{totalQty.toFixed(3)} MT</td>
+                          <td></td>
+                        </tr>
+                      </tfoot>
+                    )}
+                  </table>
+                </div>
+                <button type="button" className="btn btn-sm btn-outline-primary mt-2" onClick={addItem}>
+                  ➕ Add Product
+                </button>
+              </div>
+
+              {/* Ship to Party */}
+              <div className="mb-3">
+                <label className="form-label fw-semibold">Ship to Party</label>
+                <select className="form-select" value={partyId} onChange={handlePartyChange}>
+                  <option value="">Select party...</option>
+                  {parties.map(p => <option key={p.party_id} value={p.party_id}>{p.party_company_name}</option>)}
+                </select>
+              </div>
+
+              {/* Contact Number */}
+              <div className="mb-3">
+                <label className="form-label fw-semibold">Contact Number</label>
+                <input
+                  type="text"
+                  className="form-control"
+                  value={contactNumber}
+                  onChange={(e) => setContactNumber(e.target.value)}
+                  placeholder="Auto-filled or enter manually"
+                />
+              </div>
+
+              {/* Delivery Address */}
+              <div className="mb-3">
+                <label className="form-label fw-semibold">Delivery Address</label>
+                <textarea
+                  className="form-control"
+                  rows="2"
+                  value={deliveryAddress}
+                  onChange={(e) => setDeliveryAddress(e.target.value)}
+                  placeholder="Auto-filled or enter manually"
+                ></textarea>
+              </div>
+
+              {/* Loading Type & Preferred Loading Location */}
+              <div className="row g-3 mb-3">
+                <div className="col-md-6">
+                  <label className="form-label fw-semibold">Loading Type</label>
+                  <select className="form-select" value={loadType} onChange={(e) => setLoadType(e.target.value)}>
+                    <option value="">Select Loading Type</option>
+                    {loadTypes.map(lt => <option key={lt.code} value={lt.code}>{lt.code_desc}</option>)}
+                  </select>
+                </div>
+                <div className="col-md-6">
+                  <label className="form-label fw-semibold">Preferred Loading Location</label>
+                  <select className="form-select" value={prefLocation} onChange={(e) => setPrefLocation(e.target.value)}>
+                    <option value="">Select Preferred Location</option>
+                    {prefLocations.map(pl => <option key={pl.code} value={pl.code}>{pl.code_desc}</option>)}
+                  </select>
+                </div>
+              </div>
+            </div>
+            <div className="modal-footer">
+              <button type="button" className="btn btn-secondary" onClick={onClose}>Cancel</button>
+              <button type="submit" className="btn btn-primary" disabled={saving || items.some(i => !i.product_id || !i.order_bags)}>
+                {saving && <span className="spinner-border spinner-border-sm me-1"></span>}
+                Create Order
+              </button>
+            </div>
+          </form>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 function PlaceOrderModal({ onClose, onSaved }) {
   const [form, setForm] = useState(EMPTY_FORM);
   const [saving, setSaving] = useState(false);
@@ -458,6 +751,19 @@ function App() {
   const [sortCol, setSortCol] = useState('order_id');
   const [sortDir, setSortDir] = useState('desc');
   const [dealerLimit, setDealerLimit] = useState(null);
+  const [showCreateForDealer, setShowCreateForDealer] = useState(false);
+  const [showColumnPicker, setShowColumnPicker] = useState(false);
+  const [visibleCols, setVisibleCols] = useState({
+    dealer: IS_ADMIN,
+    product: true,
+    qty: true,
+    party: true,
+    loadType: true,
+    prefLocation: true,
+    orderDate: true,
+    status: true,
+    dispatch: true,
+  });
 
   const toggleSort = (col) => {
     if (sortCol === col) {
@@ -466,6 +772,10 @@ function App() {
       setSortCol(col);
       setSortDir('asc');
     }
+  };
+
+  const toggleColumn = (col) => {
+    setVisibleCols(prev => ({ ...prev, [col]: !prev[col] }));
   };
 
   const SortTh = ({ col, children, style }) => {
@@ -545,7 +855,7 @@ function App() {
   };
 
   const handleDealerHold = async (reason) => {
-    await changeStatus(holdOrder.order_id, 'ON_HOLD', reason ? { reason } : {});
+    await changeStatus(holdOrder.order_id, 'ON_HOLD', { reason });
     setHoldOrder(null);
   };
 
@@ -670,10 +980,66 @@ function App() {
         <div className="card-header bg-white d-flex align-items-center justify-content-between py-3">
           <h5 className="mb-0 fw-semibold">{IS_ADMIN ? '📊 All Orders & Dispatch' : '📋 My Orders'}</h5>
           <div className="d-flex gap-2">
-            {IS_ADMIN && (
-              <button className="btn btn-outline-success btn-sm" onClick={exportExcel}>
-                ⬇️ Download Excel
+            <div className="dropdown position-relative">
+              <button className="btn btn-outline-secondary btn-sm" onClick={() => setShowColumnPicker(!showColumnPicker)}>
+                ⚙️ Columns
               </button>
+              {showColumnPicker && (
+                <div className="dropdown-menu d-block position-absolute" style={{ right: 0, minWidth: 200, zIndex: 1000 }}>
+                  <div className="p-2">
+                    {IS_ADMIN && (
+                      <div className="form-check mb-2">
+                        <input className="form-check-input" type="checkbox" id="col-dealer" checked={visibleCols.dealer} onChange={() => toggleColumn('dealer')} />
+                        <label className="form-check-label" htmlFor="col-dealer">Dealer</label>
+                      </div>
+                    )}
+                    <div className="form-check mb-2">
+                      <input className="form-check-input" type="checkbox" id="col-product" checked={visibleCols.product} onChange={() => toggleColumn('product')} />
+                      <label className="form-check-label" htmlFor="col-product">Product</label>
+                    </div>
+                    <div className="form-check mb-2">
+                      <input className="form-check-input" type="checkbox" id="col-qty" checked={visibleCols.qty} onChange={() => toggleColumn('qty')} />
+                      <label className="form-check-label" htmlFor="col-qty">Quantity</label>
+                    </div>
+                    <div className="form-check mb-2">
+                      <input className="form-check-input" type="checkbox" id="col-party" checked={visibleCols.party} onChange={() => toggleColumn('party')} />
+                      <label className="form-check-label" htmlFor="col-party">Party</label>
+                    </div>
+                    <div className="form-check mb-2">
+                      <input className="form-check-input" type="checkbox" id="col-loadType" checked={visibleCols.loadType} onChange={() => toggleColumn('loadType')} />
+                      <label className="form-check-label" htmlFor="col-loadType">Loading Type</label>
+                    </div>
+                    <div className="form-check mb-2">
+                      <input className="form-check-input" type="checkbox" id="col-prefLocation" checked={visibleCols.prefLocation} onChange={() => toggleColumn('prefLocation')} />
+                      <label className="form-check-label" htmlFor="col-prefLocation">Pref. Location</label>
+                    </div>
+                    <div className="form-check mb-2">
+                      <input className="form-check-input" type="checkbox" id="col-orderDate" checked={visibleCols.orderDate} onChange={() => toggleColumn('orderDate')} />
+                      <label className="form-check-label" htmlFor="col-orderDate">Order Date</label>
+                    </div>
+                    <div className="form-check mb-2">
+                      <input className="form-check-input" type="checkbox" id="col-status" checked={visibleCols.status} onChange={() => toggleColumn('status')} />
+                      <label className="form-check-label" htmlFor="col-status">Status</label>
+                    </div>
+                    <div className="form-check">
+                      <input className="form-check-input" type="checkbox" id="col-dispatch" checked={visibleCols.dispatch} onChange={() => toggleColumn('dispatch')} />
+                      <label className="form-check-label" htmlFor="col-dispatch">Dispatch</label>
+                    </div>
+                    <hr className="my-2" />
+                    <button className="btn btn-sm btn-outline-primary w-100" onClick={() => setShowColumnPicker(false)}>Close</button>
+                  </div>
+                </div>
+              )}
+            </div>
+            {IS_ADMIN && (
+              <>
+                <button className="btn btn-outline-success btn-sm" onClick={exportExcel}>
+                  ⬇️ Download Excel
+                </button>
+                <button className="btn btn-info btn-sm" onClick={() => setShowCreateForDealer(true)}>
+                  🛒 Create for Dealer
+                </button>
+              </>
             )}
             {!IS_ADMIN && (
               <a className="btn btn-primary btn-sm" href="/orders?action=new">
@@ -745,33 +1111,33 @@ function App() {
                 <thead className="table-light">
                   <tr>
                     <SortTh col="order_id" style={{ width: 90 }}>Order Id</SortTh>
-                    {IS_ADMIN && <SortTh col="dealer_name">Dealer</SortTh>}
-                    <SortTh col="product_name">Product</SortTh>
-                    <SortTh col="quantity" style={{ width: 100 }}>Qty</SortTh>
-                    <SortTh col="party_name">Party</SortTh>
-                    <SortTh col="load_type_desc">Load Type</SortTh>
-                    <SortTh col="preferred_location_desc">Pref. Location</SortTh>
-                    <SortTh col="order_date" style={{ width: 110 }}>Order Date</SortTh>
-                    <th style={{ width: 130, textAlign: 'center' }}>Status</th>
-                    <th style={{ width: 120, textAlign: 'center' }}>Dispatch</th>
+                    {IS_ADMIN && visibleCols.dealer && <SortTh col="dealer_name">Dealer</SortTh>}
+                    {visibleCols.product && <SortTh col="product_name">Product</SortTh>}
+                    {visibleCols.qty && <SortTh col="quantity" style={{ width: 100 }}>Qty</SortTh>}
+                    {visibleCols.party && <SortTh col="party_name">Party</SortTh>}
+                    {visibleCols.loadType && <SortTh col="load_type_desc">Load Type</SortTh>}
+                    {visibleCols.prefLocation && <SortTh col="preferred_location_desc">Pref. Location</SortTh>}
+                    {visibleCols.orderDate && <SortTh col="order_date" style={{ width: 110 }}>Order Date</SortTh>}
+                    {visibleCols.status && <th style={{ width: 130, textAlign: 'center' }}>Status</th>}
+                    {visibleCols.dispatch && <th style={{ width: 120, textAlign: 'center' }}>Dispatch</th>}
                     <th style={{ width: 180, textAlign: 'center' }}>Action</th>
                   </tr>
                 </thead>
                 <tbody>
                   {sorted.length === 0 ? (
-                    <tr><td colSpan={IS_ADMIN ? 11 : 10} className="text-center text-muted py-4">No orders found</td></tr>
+                    <tr><td colSpan={Object.values(visibleCols).filter(Boolean).length + (IS_ADMIN ? 2 : 1)} className="text-center text-muted py-4">No orders found</td></tr>
                   ) : sorted.map(o => (
                     <tr key={o.order_id}>
                       <td className="fw-semibold text-primary">#{o.order_id}</td>
-                      {IS_ADMIN && <td className="text-muted small">{o.dealer_name || '—'}</td>}
-                      <td>{o.product_name}</td>
-                      <td>{o.quantity} {o.unit}</td>
-                      <td>{o.party_name || <span className="text-muted">—</span>}</td>
-                      <td>{o.load_type_desc || <span className="text-muted">—</span>}</td>
-                      <td>{o.preferred_location_desc || <span className="text-muted">—</span>}</td>
-                      <td>{formatDateTime(o.order_date)}</td>
-                      <td className="text-center"><StatusBadge status={o.order_status} /></td>
-                      <td className="text-center">
+                      {IS_ADMIN && visibleCols.dealer && <td className="text-muted small">{o.dealer_name || '—'}</td>}
+                      {visibleCols.product && <td>{o.product_name}</td>}
+                      {visibleCols.qty && <td>{o.quantity} {o.unit}</td>}
+                      {visibleCols.party && <td>{o.party_name || <span className="text-muted">—</span>}</td>}
+                      {visibleCols.loadType && <td>{o.load_type_desc || <span className="text-muted">—</span>}</td>}
+                      {visibleCols.prefLocation && <td>{o.preferred_location_desc || <span className="text-muted">—</span>}</td>}
+                      {visibleCols.orderDate && <td>{formatDateTime(o.order_date)}</td>}
+                      {visibleCols.status && <td className="text-center"><StatusBadge status={o.order_status} /></td>}
+                      {visibleCols.dispatch && <td className="text-center">
                         {o.dispatch ? (
                           <span className="text-success small fw-semibold">
                             🚛 {o.dispatch.vehicle_no}
@@ -779,7 +1145,7 @@ function App() {
                         ) : (
                           <span className="text-muted small">—</span>
                         )}
-                      </td>
+                      </td>}
                       <td className="text-center">
                         <div className="d-flex justify-content-center gap-2 flex-wrap">
                           <button className="btn btn-outline-primary btn-sm"
@@ -831,7 +1197,8 @@ function App() {
 
       {selectedOrder && <DispatchModal order={selectedOrder} onClose={() => setSelectedOrder(null)} />}
       {showPlaceOrder && <PlaceOrderModal onClose={() => setShowPlaceOrder(false)} onSaved={onOrderPlaced} />}
-      {holdOrder && <OnHoldModal order={holdOrder} onConfirm={handleDealerHold} onClose={() => setHoldOrder(null)} />}
+      {showCreateForDealer && <CreateForDealerModal onClose={() => setShowCreateForDealer(false)} onSaved={onOrderPlaced} />}
+      {holdOrder && <OnHoldModal order={holdOrder} onConfirm={handleDealerHold} onClose={() => setHoldOrder(null)} requireReason={IS_ADMIN} />}
     </div>
   );
 }
