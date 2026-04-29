@@ -77,12 +77,6 @@ function App() {
     };
   };
 
-  useEffect(() => {
-    const defaults = getDefaultDates();
-    setStartDate(defaults.start);
-    setEndDate(defaults.end);
-  }, []);
-
   const load = async (dateFilters = {}) => {
     setLoading(true);
     try {
@@ -102,7 +96,16 @@ function App() {
   };
 
   useEffect(() => {
-    if (startDate && endDate) load();
+    const defaults = getDefaultDates();
+    setStartDate(defaults.start);
+    setEndDate(defaults.end);
+    // Load immediately with the default dates
+    setLoading(true);
+    fetch(`/api/sales/orders?startDate=${defaults.start}&endDate=${defaults.end}`, { credentials: 'include' })
+      .then(r => r.ok ? r.json() : Promise.reject(new Error(r.statusText)))
+      .then(setOrders)
+      .catch(e => console.error(e.message))
+      .finally(() => setLoading(false));
   }, []);
 
   const applyDateFilter = () => {
