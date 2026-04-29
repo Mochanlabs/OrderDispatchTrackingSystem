@@ -181,25 +181,34 @@ async function fetchOrders({ dealerId, startDate, endDate }) {
 
 // ── Auth middleware for office executives ───────────────────────────────────
 function ensureAdminOrOfficeExecutive(req, res, next) {
-  if (!req.session?.user) return res.redirect('/signin');
+  if (!req.session?.user) {
+    if (req.path.startsWith('/api/')) return res.status(401).json({ error: 'Unauthorized' });
+    return res.redirect('/signin');
+  }
   const role = req.session.user.role;
-  if (role !== 'ADMIN' && role !== 'OFFICE_EXECUTIVE') return res.status(403).send('Access denied.');
+  if (role !== 'ADMIN' && role !== 'OFFICE_EXECUTIVE') return res.status(403).json({ error: 'Access denied.' });
   return next();
 }
 
 // ── Auth middleware for sales officers ───────────────────────────────────────
 function ensureSalesOfficer(req, res, next) {
-  if (!req.session?.user) return res.redirect('/signin');
+  if (!req.session?.user) {
+    if (req.path.startsWith('/api/')) return res.status(401).json({ error: 'Unauthorized' });
+    return res.redirect('/signin');
+  }
   const role = req.session.user.role;
-  if (role !== 'SALES_OFFICER' && role !== 'ADMIN') return res.status(403).send('Access denied.');
+  if (role !== 'SALES_OFFICER' && role !== 'ADMIN') return res.status(403).json({ error: 'Access denied.' });
   return next();
 }
 
 // ── Auth middleware for admin only ─────────────────────────────────────────────
 function ensureAdmin(req, res, next) {
-  if (!req.session?.user) return res.redirect('/signin');
+  if (!req.session?.user) {
+    if (req.path.startsWith('/api/')) return res.status(401).json({ error: 'Unauthorized' });
+    return res.redirect('/signin');
+  }
   const role = req.session.user.role;
-  if (role !== 'ADMIN') return res.status(403).send('Access denied.');
+  if (role !== 'ADMIN') return res.status(403).json({ error: 'Access denied.' });
   return next();
 }
 
