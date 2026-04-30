@@ -231,6 +231,10 @@ router.get('/sales/dashboard', ensureSalesOfficer, (req, res) => {
   res.render('sales/dashboard', { user: req.session.user });
 });
 
+router.get('/sales/report', ensureSalesOfficer, (req, res) => {
+  res.render('sales/report', { user: req.session.user });
+});
+
 router.get('/orders/new', ensureDealer, (req, res) => {
   if (req.session.user.role !== 'DEALER') return res.redirect('/orders');
   res.render('orders/new', { user: req.session.user });
@@ -289,6 +293,74 @@ router.get('/api/sales/orders', ensureSalesOfficer, async (req, res) => {
   try {
     const { startDate, endDate } = req.query;
     res.json(await fetchOrders({ startDate, endDate }));
+  } catch (e) {
+    console.error(e);
+    res.status(500).json({ error: 'Server error' });
+  }
+});
+
+// ── Sales Report API ───────────────────────────────────────────────────────────
+router.get('/api/sales/reports/monthly', ensureSalesOfficer, async (req, res) => {
+  try {
+    const { year, month } = req.query;
+    const now = new Date();
+    const reportYear = year ? parseInt(year) : now.getFullYear();
+    const reportMonth = month ? parseInt(month) : now.getMonth() + 1;
+
+    // Query 1: Dealer summary with status breakdown
+    const dealerSummary = await pool.query(`
+      SELECT
+        d.dealer_id, d.dealer_name, u.user_login_name, d.dealer_monthly_target,
+        COUNT(DISTINCT o.order_id)::integer AS total_orders,
+        COALESCE(SUM(oi.order_quantity), 0)::numeric AS total_qty,
+        COUNT(DISTINCT CASE WHEN o.order_status = 'ORDER_PLACED'  THEN o.order_id END)::integer AS placed_count,
+        COUNT(DISTINCT CASE WHEN o.order_status = 'ACCEPTED'      THEN o.order_id END)::integer AS accepted_count,
+        COUNT(DISTINCT CASE WHEN o.order_status = 'DISPATCHED'    THEN o.order_id END)::integer AS dispatched_count,
+        COUNT(DISTINCT CASE WHEN o.order_status = 'ON_HOLD'       THEN o.order_id END)::integer AS on_hold_count
+      FROM odts.dealers d
+      LEFT JOIN odts.users u ON u.dealer_id = d.dealer_id AND u.user_role_id = 2
+      LEFT JOIN odts.dealer_orders o
+        ON o.dealer_id = d.dealer_id
+        AND DATE_TRUNC('month', o.order_date) = make_date($1, $2, 1)
+      LEFT JOIN odts.dealer_order_items oi ON oi.order_id = o.order_id
+      GROUP BY d.dealer_id, d.dealer_name, u.user_login_name, d.dealer_monthly_target
+      ORDER BY d.dealer_name
+    `, [reportYear, reportMonth]);
+
+    // Query 2: Product breakdown per dealer
+    const productBreakdown = await pool.query(`
+      SELECT d.dealer_id, p.product_name,
+        COUNT(DISTINCT o.order_id)::integer AS order_count,
+        COALESCE(SUM(oi.order_quantity), 0)::numeric AS total_qty
+      FROM odts.dealer_orders o
+      JOIN odts.dealers d ON d.dealer_id = o.dealer_id
+      JOIN odts.dealer_order_items oi ON oi.order_id = o.order_id
+      JOIN odts.products p ON p.product_id = oi.product_id
+      WHERE DATE_TRUNC('month', o.order_date) = make_date($1, $2, 1)
+      GROUP BY d.dealer_id, p.product_name
+      ORDER BY d.dealer_id, p.product_name
+    `, [reportYear, reportMonth]);
+
+    // Query 3: Daily breakdown per dealer
+    const dailyBreakdown = await pool.query(`
+      SELECT d.dealer_id, DATE(o.order_date) AS order_day,
+        COUNT(DISTINCT o.order_id)::integer AS order_count,
+        COALESCE(SUM(oi.order_quantity), 0)::numeric AS total_qty
+      FROM odts.dealer_orders o
+      JOIN odts.dealers d ON d.dealer_id = o.dealer_id
+      JOIN odts.dealer_order_items oi ON oi.order_id = o.order_id
+      WHERE DATE_TRUNC('month', o.order_date) = make_date($1, $2, 1)
+      GROUP BY d.dealer_id, DATE(o.order_date)
+      ORDER BY d.dealer_id, order_day
+    `, [reportYear, reportMonth]);
+
+    res.json({
+      dealers: dealerSummary.rows,
+      products: productBreakdown.rows,
+      daily: dailyBreakdown.rows,
+      year: reportYear,
+      month: reportMonth
+    });
   } catch (e) {
     console.error(e);
     res.status(500).json({ error: 'Server error' });

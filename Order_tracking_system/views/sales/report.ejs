@@ -1,0 +1,330 @@
+<%- include('../partials/header') %>
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4/dist/chart.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/react@18/umd/react.development.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/react-dom@18/umd/react-dom.development.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/@babel/standalone/babel.min.js"></script>
+
+<nav aria-label="breadcrumb" class="mb-3">
+  <ol class="breadcrumb">
+    <li class="breadcrumb-item"><a href="/dashboard">Dashboard</a></li>
+    <li class="breadcrumb-item active">Sales Report</li>
+  </ol>
+</nav>
+<div id="app-root"></div>
+
+<script type="text/babel">
+const { useState, useEffect, useRef } = React;
+
+function SalesReport() {
+  const [dealers, setDealers] = useState([]);
+  const [products, setProducts] = useState([]);
+  const [daily, setDaily] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [year, setYear] = useState(new Date().getFullYear());
+  const [month, setMonth] = useState(new Date().getMonth() + 1);
+  const [expanded, setExpanded] = useState({});
+  const chartRef = useRef(null);
+  const chartInstance = useRef(null);
+
+  const monthNames = ['January', 'February', 'March', 'April', 'May', 'June',
+    'July', 'August', 'September', 'October', 'November', 'December'];
+
+  const loadReport = async (y, m) => {
+    setLoading(true);
+    try {
+      const r = await fetch(`/api/sales/reports/monthly?year=${y}&month=${m}`, { credentials: 'include' });
+      if (!r.ok) throw new Error(await r.text());
+      const data = await r.json();
+      setDealers(data.dealers);
+      setProducts(data.products);
+      setDaily(data.daily);
+      renderChart(data.dealers);
+    } catch (e) {
+      console.error(e.message);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const renderChart = (dealerData) => {
+    if (!chartRef.current) return;
+    if (chartInstance.current) chartInstance.current.destroy();
+
+    const ctx = chartRef.current.getContext('2d');
+    chartInstance.current = new Chart(ctx, {
+      type: 'bar',
+      data: {
+        labels: dealerData.map(d => d.dealer_name),
+        datasets: [{
+          label: 'Total Quantity (MT)',
+          data: dealerData.map(d => parseFloat(d.total_qty) || 0),
+          backgroundColor: '#198754',
+          borderColor: '#0d6efd',
+          borderWidth: 1,
+        }]
+      },
+      options: {
+        responsive: true,
+        maintainAspectRatio: true,
+        plugins: {
+          legend: { position: 'top' },
+          title: { display: true, text: `Sales Report — ${monthNames[month - 1]} ${year}` }
+        },
+        scales: {
+          y: { beginAtZero: true, title: { display: true, text: 'Quantity (MT)' } }
+        }
+      }
+    });
+  };
+
+  useEffect(() => {
+    loadReport(year, month);
+  }, [year, month]);
+
+  const handlePrevMonth = () => {
+    if (month === 1) {
+      setYear(year - 1);
+      setMonth(12);
+    } else {
+      setMonth(month - 1);
+    }
+  };
+
+  const handleNextMonth = () => {
+    if (month === 12) {
+      setYear(year + 1);
+      setMonth(1);
+    } else {
+      setMonth(month + 1);
+    }
+  };
+
+  const toggleExpand = (dealerId) => {
+    setExpanded(prev => ({ ...prev, [dealerId]: !prev[dealerId] }));
+  };
+
+  const exportExcel = () => {
+    const dealerData = dealers.map(d => ({
+      'Dealer': d.dealer_name,
+      'Code': d.user_login_name || '',
+      'Total Orders': d.total_orders,
+      'Total Qty (MT)': parseFloat(d.total_qty).toFixed(2),
+      'Placed': d.placed_count,
+      'Accepted': d.accepted_count,
+      'Dispatched': d.dispatched_count,
+      'On Hold': d.on_hold_count
+    }));
+
+    const productData = products.map(p => ({
+      'Dealer ID': p.dealer_id,
+      'Product': p.product_name,
+      'Orders': p.order_count,
+      'Qty (MT)': parseFloat(p.total_qty).toFixed(2)
+    }));
+
+    const dailyData = daily.map(d => ({
+      'Dealer ID': d.dealer_id,
+      'Date': d.order_day,
+      'Orders': d.order_count,
+      'Qty (MT)': parseFloat(d.total_qty).toFixed(2)
+    }));
+
+    const ws1 = XLSX.utils.json_to_sheet(dealerData);
+    const ws2 = XLSX.utils.json_to_sheet(productData);
+    const ws3 = XLSX.utils.json_to_sheet(dailyData);
+    const wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, ws1, 'Dealer Summary');
+    XLSX.utils.book_append_sheet(wb, ws2, 'Product Breakdown');
+    XLSX.utils.book_append_sheet(wb, ws3, 'Daily Breakdown');
+    XLSX.writeFile(wb, `Sales_Report_${monthNames[month - 1]}_${year}.xlsx`);
+  };
+
+  const totalDealer = dealers.length;
+  const totalOrders = dealers.reduce((sum, d) => sum + d.total_orders, 0);
+  const totalQty = dealers.reduce((sum, d) => sum + parseFloat(d.total_qty || 0), 0);
+
+  const getDealerProducts = (dealerId) => products.filter(p => p.dealer_id === dealerId);
+  const getDealerDaily = (dealerId) => daily.filter(d => d.dealer_id === dealerId);
+
+  return (
+    <div>
+      {/* Header & Controls */}
+      <div className="card shadow-sm mb-4">
+        <div className="card-header bg-white py-3 d-flex align-items-center justify-content-between">
+          <h5 className="mb-0 fw-semibold">📊 Monthly Sales Report</h5>
+          <div className="d-flex gap-2 align-items-center">
+            <button className="btn btn-outline-secondary btn-sm" onClick={handlePrevMonth}>← Prev</button>
+            <span className="fw-semibold" style={{ minWidth: 200, textAlign: 'center' }}>
+              {monthNames[month - 1]} {year}
+            </span>
+            <button className="btn btn-outline-secondary btn-sm" onClick={handleNextMonth}>Next →</button>
+            <button className="btn btn-success btn-sm" onClick={exportExcel}>📥 Export</button>
+          </div>
+        </div>
+      </div>
+
+      {/* Summary Cards */}
+      <div className="row mb-3">
+        <div className="col-md-3">
+          <div className="card border-0 shadow-sm">
+            <div className="card-body p-3">
+              <div className="text-muted small mb-1">Total Dealers</div>
+              <div className="fs-5 fw-bold">{totalDealer}</div>
+            </div>
+          </div>
+        </div>
+        <div className="col-md-3">
+          <div className="card border-0 shadow-sm">
+            <div className="card-body p-3">
+              <div className="text-muted small mb-1">Total Orders</div>
+              <div className="fs-5 fw-bold">{totalOrders}</div>
+            </div>
+          </div>
+        </div>
+        <div className="col-md-6">
+          <div className="card border-0 shadow-sm">
+            <div className="card-body p-3">
+              <div className="text-muted small mb-1">Total Quantity</div>
+              <div className="fs-5 fw-bold">{totalQty.toFixed(2)} MT</div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      {/* Chart */}
+      <div className="card shadow-sm mb-4">
+        <div className="card-body">
+          {loading ? (
+            <div className="text-center py-5">
+              <div className="spinner-border text-primary"></div>
+              <p className="text-muted mt-2">Loading report…</p>
+            </div>
+          ) : (
+            <canvas ref={chartRef} style={{ maxHeight: '400px' }}></canvas>
+          )}
+        </div>
+      </div>
+
+      {/* Table */}
+      <div className="card shadow-sm">
+        <div className="card-header bg-white py-3">
+          <h5 className="mb-0 fw-semibold">📋 Sales by Dealer</h5>
+        </div>
+        <div className="card-body">
+          {loading ? (
+            <div className="text-center py-5">
+              <div className="spinner-border text-primary"></div>
+              <p className="text-muted mt-2">Loading report…</p>
+            </div>
+          ) : dealers.length === 0 ? (
+            <div className="text-center text-muted py-5">No data for this period</div>
+          ) : (
+            <div className="table-responsive">
+              <table className="table table-hover table-bordered align-middle mb-0" style={{ fontSize: '0.9rem' }}>
+                <thead className="table-light">
+                  <tr>
+                    <th style={{ width: 40 }}></th>
+                    <th>Dealer</th>
+                    <th style={{ width: 80 }}>Code</th>
+                    <th style={{ width: 100, textAlign: 'center' }}>Orders</th>
+                    <th style={{ width: 100, textAlign: 'center' }}>Qty (MT)</th>
+                    <th style={{ width: 70, textAlign: 'center' }}>Placed</th>
+                    <th style={{ width: 70, textAlign: 'center' }}>Accepted</th>
+                    <th style={{ width: 70, textAlign: 'center' }}>Dispatched</th>
+                    <th style={{ width: 70, textAlign: 'center' }}>On Hold</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {dealers.map(d => (
+                    <React.Fragment key={d.dealer_id}>
+                      <tr>
+                        <td style={{ cursor: 'pointer', textAlign: 'center' }} onClick={() => toggleExpand(d.dealer_id)}>
+                          <span style={{ fontSize: '1.2rem' }}>{expanded[d.dealer_id] ? '▼' : '▶'}</span>
+                        </td>
+                        <td className="fw-semibold">{d.dealer_name}</td>
+                        <td className="text-muted small">{d.user_login_name || '—'}</td>
+                        <td className="text-center">{d.total_orders}</td>
+                        <td className="text-center fw-semibold">{parseFloat(d.total_qty).toFixed(2)}</td>
+                        <td className="text-center text-primary">{d.placed_count}</td>
+                        <td className="text-center text-info">{d.accepted_count}</td>
+                        <td className="text-center text-success">{d.dispatched_count}</td>
+                        <td className="text-center text-danger">{d.on_hold_count}</td>
+                      </tr>
+                      {expanded[d.dealer_id] && (
+                        <tr>
+                          <td colSpan="9" className="bg-light">
+                            <div className="row mt-2 mb-2">
+                              <div className="col-md-6">
+                                <strong className="mb-2 d-block">By Product:</strong>
+                                <div className="table-responsive">
+                                  <table className="table table-sm table-bordered mb-0" style={{ fontSize: '0.85rem' }}>
+                                    <thead className="table-light">
+                                      <tr>
+                                        <th>Product</th>
+                                        <th style={{ width: 80, textAlign: 'center' }}>Orders</th>
+                                        <th style={{ width: 100, textAlign: 'center' }}>Qty (MT)</th>
+                                      </tr>
+                                    </thead>
+                                    <tbody>
+                                      {getDealerProducts(d.dealer_id).length > 0 ? (
+                                        getDealerProducts(d.dealer_id).map((p, idx) => (
+                                          <tr key={idx}>
+                                            <td>{p.product_name}</td>
+                                            <td className="text-center">{p.order_count}</td>
+                                            <td className="text-center">{parseFloat(p.total_qty).toFixed(2)}</td>
+                                          </tr>
+                                        ))
+                                      ) : (
+                                        <tr><td colSpan="3" className="text-muted text-center">No products</td></tr>
+                                      )}
+                                    </tbody>
+                                  </table>
+                                </div>
+                              </div>
+                              <div className="col-md-6">
+                                <strong className="mb-2 d-block">By Day:</strong>
+                                <div className="table-responsive">
+                                  <table className="table table-sm table-bordered mb-0" style={{ fontSize: '0.85rem' }}>
+                                    <thead className="table-light">
+                                      <tr>
+                                        <th>Date</th>
+                                        <th style={{ width: 80, textAlign: 'center' }}>Orders</th>
+                                        <th style={{ width: 100, textAlign: 'center' }}>Qty (MT)</th>
+                                      </tr>
+                                    </thead>
+                                    <tbody>
+                                      {getDealerDaily(d.dealer_id).length > 0 ? (
+                                        getDealerDaily(d.dealer_id).map((dy, idx) => (
+                                          <tr key={idx}>
+                                            <td>{dy.order_day}</td>
+                                            <td className="text-center">{dy.order_count}</td>
+                                            <td className="text-center">{parseFloat(dy.total_qty).toFixed(2)}</td>
+                                          </tr>
+                                        ))
+                                      ) : (
+                                        <tr><td colSpan="3" className="text-muted text-center">No orders</td></tr>
+                                      )}
+                                    </tbody>
+                                  </table>
+                                </div>
+                              </div>
+                            </div>
+                          </td>
+                        </tr>
+                      )}
+                    </React.Fragment>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+ReactDOM.createRoot(document.getElementById('app-root')).render(<SalesReport />);
+</script>
+<%- include('../partials/footer') %>
