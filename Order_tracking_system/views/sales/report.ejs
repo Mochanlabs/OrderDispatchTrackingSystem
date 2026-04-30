@@ -24,6 +24,7 @@ function SalesReport() {
   const [year, setYear] = useState(new Date().getFullYear());
   const [month, setMonth] = useState(new Date().getMonth() + 1);
   const [expanded, setExpanded] = useState({});
+  const [dealerSearch, setDealerSearch] = useState('');
   const chartRef = useRef(null);
   const chartInstance = useRef(null);
 
@@ -212,6 +213,17 @@ function SalesReport() {
           <h5 className="mb-0 fw-semibold">📋 Sales by Dealer</h5>
         </div>
         <div className="card-body">
+          {!loading && dealers.length > 0 && (
+            <div className="mb-3">
+              <input
+                type="text"
+                className="form-control"
+                placeholder="Search by dealer name or code…"
+                value={dealerSearch}
+                onChange={e => setDealerSearch(e.target.value)}
+              />
+            </div>
+          )}
           {loading ? (
             <div className="text-center py-5">
               <div className="spinner-border text-primary"></div>
@@ -236,7 +248,11 @@ function SalesReport() {
                   </tr>
                 </thead>
                 <tbody>
-                  {dealers.map(d => (
+                  {dealers.filter(d => {
+                    const searchLower = dealerSearch.toLowerCase();
+                    return d.dealer_name.toLowerCase().includes(searchLower) ||
+                           (d.user_login_name && d.user_login_name.toLowerCase().includes(searchLower));
+                  }).map(d => (
                     <React.Fragment key={d.dealer_id}>
                       <tr>
                         <td style={{ cursor: 'pointer', textAlign: 'center' }} onClick={() => toggleExpand(d.dealer_id)}>
