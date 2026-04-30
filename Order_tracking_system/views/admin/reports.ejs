@@ -1,5 +1,6 @@
 <%- include('../partials/header') %>
 <script src="https://cdn.jsdelivr.net/npm/chart.js@4/dist/chart.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/react@18/umd/react.development.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/react-dom@18/umd/react-dom.development.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/@babel/standalone/babel.min.js"></script>
@@ -104,6 +105,22 @@ function ReportDashboard() {
     }
   };
 
+  const exportExcel = () => {
+    const data = reports.map(r => ({
+      'Dealer': r.dealer_name,
+      'Code': r.user_login_name || '',
+      'Monthly Target': parseFloat(r.dealer_monthly_target || 0).toFixed(2),
+      'This Month (MT)': r.current_month_total,
+      'Last Month (MT)': r.last_month_total,
+      'Achievement %': r.achievement,
+      'Status': r.status === 'green' ? 'On Track' : r.status === 'orange' ? 'At Risk' : 'Behind'
+    }));
+    const ws = XLSX.utils.json_to_sheet(data);
+    const wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, ws, 'Dealer Report');
+    XLSX.writeFile(wb, `Monthly_Report_${monthNames[month - 1]}_${year}.xlsx`);
+  };
+
   return (
     <div>
       {/* Header & Controls */}
@@ -116,6 +133,7 @@ function ReportDashboard() {
               {monthNames[month - 1]} {year}
             </span>
             <button className="btn btn-outline-secondary btn-sm" onClick={handleNextMonth}>Next →</button>
+            <button className="btn btn-success btn-sm" onClick={exportExcel}>📥 Export</button>
           </div>
         </div>
       </div>
