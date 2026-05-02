@@ -11,6 +11,7 @@
     "dev": "nodemon server.js"
   },
   "dependencies": {
+    "@aws-sdk/client-ssm": "^3.500.0",
     "bcrypt": "^5.1.0",
     "cors": "^2.8.6",
     "dotenv": "^17.4.1",
@@ -22,5 +23,5 @@
   "devDependencies": {
     "nodemon": "^2.0.22"
   },
-  "keywords": []
+  "keywords": []  
 }
