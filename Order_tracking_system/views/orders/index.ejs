@@ -1178,16 +1178,16 @@ function App() {
                           {IS_ADMIN && o.order_status === 'ACCEPTED' && (
                             <button className="btn btn-primary btn-sm" title="Mark as dispatched" onClick={() => changeStatus(o.order_id, 'DISPATCHED')}>Dispatch</button>
                           )}
-                          {IS_ADMIN && o.order_status === 'ON_HOLD' && o.on_hold_by !== 'DEALER' && (
+                          {IS_ADMIN && o.order_status === 'ON_HOLD' && o.on_hold_by_role !== 'DEALER' && (
                             <button className="btn btn-warning btn-sm" title="Unhold to Order Placed" onClick={() => changeStatus(o.order_id, 'ORDER_PLACED')}>Unhold</button>
                           )}
-                          {IS_ADMIN && o.order_status === 'ON_HOLD' && o.on_hold_by === 'DEALER' && (
+                          {IS_ADMIN && o.order_status === 'ON_HOLD' && o.on_hold_by_role === 'DEALER' && (
                             <span className="badge bg-secondary" title="Put on hold by dealer — only dealer can reopen">🔒 Dealer Hold</span>
                           )}
                           {!IS_ADMIN && o.order_status === 'ORDER_PLACED' && (
                             <button className="btn btn-outline-secondary btn-sm" title="Put this order on hold" onClick={() => setHoldOrder(o)}>On Hold</button>
                           )}
-                          {!IS_ADMIN && o.order_status === 'ON_HOLD' && o.on_hold_by === 'DEALER' && (
+                          {!IS_ADMIN && o.order_status === 'ON_HOLD' && o.on_hold_by_role === 'DEALER' && (
                             <button className="btn btn-warning btn-sm" title="Unhold order" onClick={() => changeStatus(o.order_id, 'ORDER_PLACED')}>Unhold</button>
                           )}
                           {!IS_ADMIN && (o.order_status === 'ACCEPTED' || o.order_status === 'DISPATCHED') && (
