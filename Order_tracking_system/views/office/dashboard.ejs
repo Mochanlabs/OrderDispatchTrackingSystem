@@ -105,18 +105,46 @@ function App() {
   const [statusFilter, setStatusFilter] = useState('ORDER_PLACED,ACCEPTED,ON_HOLD');
   const [toast, setToast] = useState({ msg: '', type: 'success' });
   const [holdOrder, setHoldOrder] = useState(null);
+  const [dateRange, setDateRange] = useState('today');
+  const [startDate, setStartDate] = useState(new Date().toISOString().slice(0, 10));
+  const [endDate, setEndDate] = useState(new Date().toISOString().slice(0, 10));
 
   const notify = (msg, type = 'success') => {
     setToast({ msg, type });
     setTimeout(() => setToast({ msg: '' }), 4000);
   };
 
+  const getDateRange = () => {
+    const end = new Date();
+    const start = new Date();
+
+    switch(dateRange) {
+      case 'today':
+        return [end, end];
+      case 'yesterday':
+        start.setDate(start.getDate() - 1);
+        end.setDate(end.getDate() - 1);
+        return [start, end];
+      case 'last7':
+        start.setDate(start.getDate() - 7);
+        return [start, end];
+      case 'last30':
+        start.setDate(start.getDate() - 30);
+        return [start, end];
+      case 'custom':
+        return [new Date(startDate), new Date(endDate)];
+      default:
+        return [end, end];
+    }
+  };
+
   const load = async () => {
     setLoading(true);
     try {
+      const [start, end] = getDateRange();
       const params = new URLSearchParams();
-      params.set('startDate', new Date().toISOString().slice(0, 10));
-      params.set('endDate', new Date().toISOString().slice(0, 10));
+      params.set('startDate', start.toISOString().slice(0, 10));
+      params.set('endDate', end.toISOString().slice(0, 10));
       const r = await fetch(`/api/office/orders?${params.toString()}`, { credentials: 'include' });
       if (!r.ok) throw new Error(await r.text());
       setOrders(await r.json());
@@ -129,7 +157,7 @@ function App() {
 
   useEffect(() => {
     load();
-  }, []);
+  }, [dateRange, startDate, endDate]);
 
   const changeStatus = async (orderId, newStatus, extra = {}) => {
     try {
@@ -226,11 +254,41 @@ function App() {
         </div>
         <div className="card-body">
           <div className="row mb-3 g-2">
-            <div className="col-md-6">
+            <div className="col-md-4">
               <input className="form-control" placeholder="Search by product, order ID…"
                 value={search} onChange={e => setSearch(e.target.value)} />
             </div>
-            <div className="col-md-6">
+            <div className="col-md-3">
+              <select className="form-select" value={dateRange} onChange={e => {
+                setDateRange(e.target.value);
+                if (e.target.value !== 'custom') {
+                  const [start, end] = getDateRange();
+                  setStartDate(start.toISOString().slice(0, 10));
+                  setEndDate(end.toISOString().slice(0, 10));
+                }
+              }}>
+                <option value="today">Today</option>
+                <option value="yesterday">Yesterday</option>
+                <option value="last7">Last 7 days</option>
+                <option value="last30">Last 30 days</option>
+                <option value="custom">Custom Range</option>
+              </select>
+            </div>
+            {dateRange === 'custom' && (
+              <>
+                <div className="col-md-2">
+                  <input type="date" className="form-control" value={startDate}
+                    onChange={e => setStartDate(e.target.value)} />
+                </div>
+                <div className="col-md-2">
+                  <input type="date" className="form-control" value={endDate}
+                    onChange={e => setEndDate(e.target.value)} />
+                </div>
+              </>
+            )}
+          </div>
+          <div className="row mb-3 g-2">
+            <div className="col-md-12">
               <div className="btn-group w-100" role="group">
                 <input type="radio" className="btn-check" name="status" id="status-all" value="ORDER_PLACED,ACCEPTED,ON_HOLD"
                   checked={statusFilter === 'ORDER_PLACED,ACCEPTED,ON_HOLD'}

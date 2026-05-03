@@ -213,28 +213,58 @@
         </div>
       </div>
     </div>
-    <div class="col-md-6">
-      <a href="/office/dashboard" class="dash-card">
+
+    <!-- Orders & Dispatch -->
+    <div class="col-12"><div class="section-label">📊 Orders &amp; Dispatch</div></div>
+    <div class="col-md-4">
+      <a href="/orders" class="dash-card">
         <div class="card card-accent-blue h-100">
           <div class="card-body d-flex align-items-center gap-3 py-4">
             <div class="card-icon" style="background:#eff6ff">📊</div>
-            <div>
-              <div class="fw-600 fs-6">Office Dashboard</div>
-              <div class="text-muted small">View all orders &amp; manage holds</div>
-            </div>
+            <div><div class="fw-600 fs-6">All Orders &amp; Dispatch</div><div class="text-muted small">View all dealer orders &amp; dispatch info</div></div>
           </div>
         </div>
       </a>
     </div>
-    <div class="col-md-6">
-      <a href="/master/users" class="dash-card">
+    <div class="col-md-4">
+      <a href="/orders?action=create-for-dealer" class="dash-card">
         <div class="card card-accent-green h-100">
           <div class="card-body d-flex align-items-center gap-3 py-4">
+            <div class="card-icon" style="background:#f0fdf4">📝</div>
+            <div><div class="fw-600 fs-6">Create Order for Dealer</div><div class="text-muted small">Place order on behalf of dealer</div></div>
+          </div>
+        </div>
+      </a>
+    </div>
+    <div class="col-md-4">
+      <a href="/sales/report" class="dash-card">
+        <div class="card card-accent-teal h-100">
+          <div class="card-body d-flex align-items-center gap-3 py-4">
+            <div class="card-icon" style="background:#f0fdfa">📈</div>
+            <div><div class="fw-600 fs-6">Sales Report</div><div class="text-muted small">Monthly dealer sales analysis</div></div>
+          </div>
+        </div>
+      </a>
+    </div>
+
+    <!-- Master Data -->
+    <div class="col-12"><div class="section-label">🗂️ Master Data</div></div>
+    <div class="col-md-4">
+      <a href="/master/products" class="dash-card">
+        <div class="card card-accent-blue h-100">
+          <div class="card-body d-flex align-items-center gap-3 py-3">
+            <div class="card-icon" style="background:#eff6ff">📦</div>
+            <div><div class="fw-600">Products</div><div class="text-muted small">Manage product master</div></div>
+          </div>
+        </div>
+      </a>
+    </div>
+    <div class="col-md-4">
+      <a href="/master/users" class="dash-card">
+        <div class="card card-accent-green h-100">
+          <div class="card-body d-flex align-items-center gap-3 py-3">
             <div class="card-icon" style="background:#f0fdf4">👥</div>
-            <div>
-              <div class="fw-600 fs-6">Create Users</div>
-              <div class="text-muted small">Create login users for dealers</div>
-            </div>
+            <div><div class="fw-600">Create Users</div><div class="text-muted small">Create login users for dealers</div></div>
           </div>
         </div>
       </a>
