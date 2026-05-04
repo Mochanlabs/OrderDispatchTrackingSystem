@@ -239,14 +239,19 @@ function App(){
     if(!inlineEdit) return;
     setInlineEditSaving(true);
     try{
+      const dealer=rows.find(r=>r.dealer_id===inlineEdit.dealerId);
       const updatePayload={};
       updatePayload[inlineEdit.field]=parseFloat(inlineEditValue)||0;
       const res=await fetch(`/api/dealers/${inlineEdit.dealerId}`,{
         method:'PUT',
         headers:{'Content-Type':'application/json'},
         body:JSON.stringify({
-          dealer_name:rows.find(r=>r.dealer_id===inlineEdit.dealerId)?.dealer_name,
-          dealer_company_name:rows.find(r=>r.dealer_id===inlineEdit.dealerId)?.dealer_company_name,
+          dealer_name:dealer?.dealer_name,
+          dealer_company_name:dealer?.dealer_company_name||'',
+          dealer_code:dealer?.dealer_code||'',
+          dealer_phone:dealer?.dealer_phone||'',
+          dealer_email:dealer?.dealer_email||'',
+          dealer_is_active_flag:dealer?.dealer_is_active_flag,
           ...updatePayload
         })
       });
@@ -311,7 +316,7 @@ function App(){
                 <td className="text-end" onClick={()=>startInlineEdit(r.dealer_id,'dealer_daily_limit',r.dealer_daily_limit||0)} style={{cursor:'pointer',padding:'0.5rem'}}>
                   {inlineEdit?.dealerId===r.dealer_id && inlineEdit?.field==='dealer_daily_limit'
                     ?<div className="d-flex align-items-center gap-1">
-                      <input type="number" min="0" step="0.01" className="form-control form-control-sm" style={{width:'80px'}} value={inlineEditValue} onChange={e=>setInlineEditValue(e.target.value)} autoFocus onKeyDown={e=>{if(e.key==='Enter')saveInlineEdit();if(e.key==='Escape')cancelInlineEdit();}} onBlur={saveInlineEdit}/>
+                      <input type="number" min="0" step="0.01" className="form-control form-control-sm" style={{width:'80px'}} value={inlineEditValue} onChange={e=>setInlineEditValue(e.target.value)} autoFocus onKeyDown={async(e)=>{if(e.key==='Enter'){saveInlineEdit();e.preventDefault();}else if(e.key==='Escape'){cancelInlineEdit();e.preventDefault();}else if(e.key==='Tab'){e.preventDefault();await saveInlineEdit();setTimeout(()=>{setInlineEdit({dealerId:r.dealer_id,field:'dealer_monthly_target'});setInlineEditValue((r.dealer_monthly_target||0).toString());},100);}}} onBlur={saveInlineEdit}/>
                       {inlineEditSaving&&<span className="spinner-border spinner-border-sm ms-1"></span>}
                     </div>
                     :<div style={{minWidth:'60px'}}>{r.dealer_daily_limit!=null?Number(r.dealer_daily_limit).toLocaleString():<span className="text-muted">—</span>} <span className="text-muted small">✎</span></div>
@@ -320,7 +325,7 @@ function App(){
                 <td className="text-end" onClick={()=>startInlineEdit(r.dealer_id,'dealer_monthly_target',r.dealer_monthly_target||0)} style={{cursor:'pointer',padding:'0.5rem'}}>
                   {inlineEdit?.dealerId===r.dealer_id && inlineEdit?.field==='dealer_monthly_target'
                     ?<div className="d-flex align-items-center gap-1">
-                      <input type="number" min="0" step="0.01" className="form-control form-control-sm" style={{width:'80px'}} value={inlineEditValue} onChange={e=>setInlineEditValue(e.target.value)} autoFocus onKeyDown={e=>{if(e.key==='Enter')saveInlineEdit();if(e.key==='Escape')cancelInlineEdit();}} onBlur={saveInlineEdit}/>
+                      <input type="number" min="0" step="0.01" className="form-control form-control-sm" style={{width:'80px'}} value={inlineEditValue} onChange={e=>setInlineEditValue(e.target.value)} autoFocus onKeyDown={e=>{if(e.key==='Enter'){saveInlineEdit();e.preventDefault();}else if(e.key==='Escape'){cancelInlineEdit();e.preventDefault();}else if(e.key==='Tab'){saveInlineEdit();e.preventDefault();}}} onBlur={saveInlineEdit}/>
                       {inlineEditSaving&&<span className="spinner-border spinner-border-sm ms-1"></span>}
                     </div>
                     :<div style={{minWidth:'60px'}}>{r.dealer_monthly_target!=null?Number(r.dealer_monthly_target).toLocaleString():<span className="text-muted">—</span>} <span className="text-muted small">✎</span></div>

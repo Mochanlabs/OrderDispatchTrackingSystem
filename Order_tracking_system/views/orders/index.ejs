@@ -3,7 +3,7 @@
 <script src="https://cdn.jsdelivr.net/npm/react-dom@18/umd/react-dom.development.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/@babel/standalone/babel.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
-<script>window._IS_ADMIN = <%- isAdmin ? 'true' : 'false' %>; window._CAN_VIEW_ALL = <%- canViewAllOrders ? 'true' : 'false' %>;</script>
+<script>window._IS_ADMIN = <%- isAdmin ? 'true' : 'false' %>; window._CAN_VIEW_ALL = <%- canViewAllOrders ? 'true' : 'false' %>; window._IS_ADMIN_OR_OFFICE = <%- isAdminOrOffice ? 'true' : 'false' %>;</script>
 
 <nav aria-label="breadcrumb" class="mb-3">
   <ol class="breadcrumb">
@@ -17,6 +17,7 @@
 const { useState, useEffect } = React;
 const IS_ADMIN = window._IS_ADMIN === true;
 const CAN_VIEW_ALL = window._CAN_VIEW_ALL === true;
+const IS_ADMIN_OR_OFFICE = window._IS_ADMIN_OR_OFFICE === true;
 
 const STATUS_CONFIG = {
   ORDER_PLACED: { text: 'Order Placed', icon: '🕐', bg: '#fd7e14', tc: '#fff' },
@@ -1093,10 +1094,10 @@ function App() {
                           {IS_ADMIN && o.order_status === 'ACCEPTED' && (
                             <button className="btn btn-primary btn-sm" title="Mark as dispatched" onClick={() => changeStatus(o.order_id, 'DISPATCHED')}>Dispatch</button>
                           )}
-                          {IS_ADMIN && o.order_status === 'ON_HOLD' && o.on_hold_by_role !== 'DEALER' && (
-                            <button className="btn btn-warning btn-sm" title="Unhold to Order Placed" onClick={() => changeStatus(o.order_id, 'ORDER_PLACED')}>Unhold</button>
+                          {IS_ADMIN_OR_OFFICE && o.order_status === 'ON_HOLD' && o.on_hold_by_role !== 'DEALER' && (
+                            <button className="btn btn-warning btn-sm" title="Unhold order" onClick={() => changeStatus(o.order_id, 'ORDER_PLACED')}>Unhold</button>
                           )}
-                          {IS_ADMIN && o.order_status === 'ON_HOLD' && o.on_hold_by_role === 'DEALER' && (
+                          {IS_ADMIN_OR_OFFICE && o.order_status === 'ON_HOLD' && o.on_hold_by_role === 'DEALER' && (
                             <span className="badge bg-secondary" title="Put on hold by dealer — only dealer can reopen">🔒 Dealer Hold</span>
                           )}
                           {!IS_ADMIN && o.order_status === 'ORDER_PLACED' && (

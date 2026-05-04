@@ -126,7 +126,7 @@ router.post('/api/dealers', ensureAdmin, async (req, res) => {
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
 
-router.put('/api/dealers/:id', ensureAdmin, async (req, res) => {
+router.put('/api/dealers/:id', ensureAdminOrOffice, async (req, res) => {
   const { dealer_name, dealer_company_name, dealer_code, dealer_phone, dealer_email, location_id, dealer_address,
           dealer_is_active_flag, dealer_daily_limit, dealer_monthly_target } = req.body;
   if (!dealer_name) return res.status(400).json({ error: 'Dealer name required' });
@@ -173,7 +173,7 @@ router.put('/api/dealers/:id', ensureAdmin, async (req, res) => {
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
 
-router.post('/api/dealers/bulk-limits', ensureAdmin, async (req, res) => {
+router.post('/api/dealers/bulk-limits', ensureAdminOrOffice, async (req, res) => {
   const { updates } = req.body;
   if (!Array.isArray(updates) || updates.length === 0)
     return res.status(400).json({ error: 'No updates provided' });
