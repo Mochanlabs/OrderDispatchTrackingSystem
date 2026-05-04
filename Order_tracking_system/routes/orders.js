@@ -3,10 +3,6 @@ const router = express.Router();
 const pool = require('../db');
 const { sendAlert } = require('../services/smsService');
 
-function ensureAuth(req, res, next) {
-  if (!req.session || !req.session.user) return res.redirect('/signin');
-  return next();
-}
 function ensureDealer(req, res, next) {
   if (!req.session || !req.session.user) return res.redirect('/signin');
   const role = req.session.user.role;

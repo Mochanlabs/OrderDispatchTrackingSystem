@@ -29,7 +29,7 @@
             </li>
             <% } %>
 
-            <% if (typeof user !== 'undefined' && user && (user.role === 'DEALER' || user.role === 'DISPATCHER')) { %>
+            <% if (typeof user !== 'undefined' && user && user.role === 'DEALER') { %>
             <li class="nav-item">
               <a class="nav-link" href="/tracking">📡 Live Tracking</a>
             </li>
