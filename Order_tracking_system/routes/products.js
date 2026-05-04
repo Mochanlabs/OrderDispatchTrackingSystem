@@ -2,9 +2,10 @@ const express = require('express');
 const router = express.Router();
 const pool = require('../db');
 
-function ensureAdmin(req, res, next) {
+function ensureAdminOrOffice(req, res, next) {
   if (!req.session || !req.session.user) return res.status(401).json({ error: 'Not authenticated' });
-  if (req.session.user.role !== 'ADMIN') return res.status(403).json({ error: 'Admin access required' });
+  const role = req.session.user.role;
+  if (role !== 'ADMIN' && role !== 'OFFICE_EXECUTIVE') return res.status(403).json({ error: 'Access denied' });
   return next();
 }
 
@@ -13,16 +14,17 @@ function ensureAuth(req, res, next) {
   return next();
 }
 
-// --- Page route (admin only) ---
+// --- Page route (admin and office executive) ---
 router.get('/master/products', ensureAuth, (req, res) => {
-  if (req.session.user.role !== 'ADMIN') return res.status(403).send('Access denied. Admin only.');
+  const role = req.session.user.role;
+  if (role !== 'ADMIN' && role !== 'OFFICE_EXECUTIVE') return res.status(403).send('Access denied.');
   res.render('master/products', { user: req.session.user });
 });
 
 // --- REST API ---
 
 // GET all products
-router.get('/api/products', ensureAdmin, async (req, res) => {
+router.get('/api/products', ensureAdminOrOffice, async (req, res) => {
   try {
     const result = await pool.query(
       'SELECT product_id, product_name, product_desc, product_is_active_flag, created_at, updated_at FROM odts.products ORDER BY product_id'
@@ -35,7 +37,7 @@ router.get('/api/products', ensureAdmin, async (req, res) => {
 });
 
 // POST create product
-router.post('/api/products', ensureAdmin, async (req, res) => {
+router.post('/api/products', ensureAdminOrOffice, async (req, res) => {
   const { product_name, product_desc, product_is_active_flag } = req.body;
   if (!product_name) return res.status(400).json({ error: 'Product name is required' });
   try {
@@ -52,7 +54,7 @@ router.post('/api/products', ensureAdmin, async (req, res) => {
 });
 
 // PUT update product
-router.put('/api/products/:id', ensureAdmin, async (req, res) => {
+router.put('/api/products/:id', ensureAdminOrOffice, async (req, res) => {
   const { id } = req.params;
   const { product_name, product_desc, product_is_active_flag } = req.body;
   if (!product_name) return res.status(400).json({ error: 'Product name is required' });

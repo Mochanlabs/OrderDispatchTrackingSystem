@@ -197,7 +197,7 @@ function ensureSalesOfficer(req, res, next) {
     return res.redirect('/signin');
   }
   const role = req.session.user.role;
-  if (role !== 'SALES_OFFICER' && role !== 'ADMIN') return res.status(403).json({ error: 'Access denied.' });
+  if (role !== 'SALES_OFFICER' && role !== 'ADMIN' && role !== 'OFFICE_EXECUTIVE') return res.status(403).json({ error: 'Access denied.' });
   return next();
 }
 
@@ -217,10 +217,11 @@ function ensureAdmin(req, res, next) {
 router.get('/orders', ensureDealer, (req, res) => {
   const role = req.session.user.role;
   const isAdmin = role === 'ADMIN' || role === 'DISPATCHER';
+  const canViewAllOrders = role === 'ADMIN' || role === 'DISPATCHER' || role === 'OFFICE_EXECUTIVE';
   if (!isAdmin && req.query.action === 'new') {
     return res.render('orders/new', { user: req.session.user });
   }
-  res.render('orders/index', { user: req.session.user, isAdmin });
+  res.render('orders/index', { user: req.session.user, isAdmin, canViewAllOrders });
 });
 
 router.get('/office/dashboard', ensureAdminOrOfficeExecutive, (req, res) => {
@@ -255,9 +256,13 @@ router.get('/api/admin/orders', ensureDealer, async (req, res) => {
 router.get('/api/dealer/limit', ensureDealer, async (req, res) => {
   try {
     const dealerId = req.session.user.dealer_id;
-    if (!dealerId) {
-      return res.status(400).json({ error: 'No dealer linked to this account' });
+    const role = req.session.user.role;
+
+    // Non-dealer users (ADMIN, DISPATCHER, OFFICE_EXECUTIVE) don't have dealer limits
+    if (!dealerId || role !== 'DEALER') {
+      return res.json({ daily_limit: null, used_today: 0, remaining: null, percentage: 0, admin_phone: null });
     }
+
     const usage = await getDealerDailyUsage(dealerId);
     const adminPhone = await getAdminPhone();
     res.json({ ...usage, admin_phone: adminPhone });
