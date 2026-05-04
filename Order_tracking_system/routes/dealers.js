@@ -26,17 +26,24 @@ function ensureAdmin(req, res, next) {
   if (req.session.user.role !== 'ADMIN') return res.status(403).json({ error: 'Admin access required' });
   return next();
 }
+function ensureAdminOrOffice(req, res, next) {
+  if (!req.session || !req.session.user) return res.status(401).json({ error: 'Not authenticated' });
+  const role = req.session.user.role;
+  if (role !== 'ADMIN' && role !== 'OFFICE_EXECUTIVE') return res.status(403).json({ error: 'Access denied' });
+  return next();
+}
 function ensureAuth(req, res, next) {
   if (!req.session || !req.session.user) return res.redirect('/signin');
   return next();
 }
 
 router.get('/master/dealers', ensureAuth, (req, res) => {
-  if (req.session.user.role !== 'ADMIN') return res.status(403).send('Access denied. Admin only.');
+  const role = req.session.user.role;
+  if (role !== 'ADMIN' && role !== 'OFFICE_EXECUTIVE') return res.status(403).send('Access denied.');
   res.render('master/dealers', { user: req.session.user });
 });
 
-router.get('/api/dealers', ensureAdmin, async (req, res) => {
+router.get('/api/dealers', ensureAdminOrOffice, async (req, res) => {
   try {
     const dealerCompanyCol = await getFirstExistingColumn('dealers', ['dealer_company_name', 'dealer_company']);
     const hasDealerEmail = await hasColumn('dealers', 'dealer_email');
