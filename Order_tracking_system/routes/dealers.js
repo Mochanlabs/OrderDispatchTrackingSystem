@@ -49,20 +49,22 @@ router.get('/api/dealers', ensureAdminOrOffice, async (req, res) => {
     const hasDealerEmail = await hasColumn('dealers', 'dealer_email');
     const hasLocationId = await hasColumn('dealers', 'location_id');
     const r = await pool.query(
-      `SELECT dealer_id,
-              dealer_name,
-              ${dealerCompanyCol ? `d.${dealerCompanyCol} AS dealer_company_name` : 'dealer_name AS dealer_company_name'},
-              dealer_code,
-              dealer_phone,
-              ${hasDealerEmail ? 'dealer_email' : 'NULL::varchar AS dealer_email'},
-              ${hasLocationId ? 'location_id' : 'NULL::int AS location_id'},
+      `SELECT DISTINCT ON (d.dealer_id) d.dealer_id,
+              COALESCE(u.user_login_name, '—') AS user_login_name,
+              d.dealer_name,
+              ${dealerCompanyCol ? `d.${dealerCompanyCol} AS dealer_company_name` : 'd.dealer_name AS dealer_company_name'},
+              d.dealer_code,
+              d.dealer_phone,
+              ${hasDealerEmail ? 'd.dealer_email' : 'NULL::varchar AS dealer_email'},
+              ${hasLocationId ? 'd.location_id' : 'NULL::int AS location_id'},
               ${hasLocationId ? 'l.location_name' : 'NULL::varchar AS location_name'},
-              dealer_address,
-              dealer_daily_limit, dealer_monthly_target,
-              dealer_is_active_flag, created_at, updated_at
+              d.dealer_address,
+              d.dealer_daily_limit, d.dealer_monthly_target,
+              d.dealer_is_active_flag, d.created_at, d.updated_at
        FROM odts.dealers d
+       LEFT JOIN odts.users u ON u.dealer_id = d.dealer_id
        ${hasLocationId ? 'LEFT JOIN odts.locations l ON l.location_id = d.location_id' : ''}
-       ORDER BY dealer_id`);
+       ORDER BY d.dealer_id, u.user_id`);
     res.json(r.rows);
   } catch (e) { res.status(500).json({ error: e.message }); }
 });

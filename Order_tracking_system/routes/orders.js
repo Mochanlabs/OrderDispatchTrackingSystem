@@ -345,7 +345,7 @@ router.get('/api/sales/reports/monthly', ensureSalesOfficer, async (req, res) =>
 
     // Query 3: Daily breakdown per dealer
     const dailyBreakdown = await pool.query(`
-      SELECT d.dealer_id, DATE(o.order_date) AS order_day,
+      SELECT d.dealer_id, DATE(o.order_date) AS order_day, MIN(o.order_date) AS order_date,
         COUNT(DISTINCT o.order_id)::integer AS order_count,
         COALESCE(SUM(oi.order_quantity), 0)::numeric AS total_qty
       FROM odts.dealer_orders o
