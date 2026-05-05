@@ -8,7 +8,7 @@
 <nav aria-label="breadcrumb" class="mb-3">
   <ol class="breadcrumb">
     <li class="breadcrumb-item"><a href="/dashboard">Dashboard</a></li>
-    <li class="breadcrumb-item active"><%= isAdmin ? 'All Orders & Dispatch' : 'My Orders' %></li>
+    <li class="breadcrumb-item active"><%= isAdminOrOffice ? 'All Orders & Dispatch' : 'My Orders' %></li>
   </ol>
 </nav>
 <div id="app-root"></div>
@@ -67,9 +67,9 @@ function OnHoldModal({ order, onConfirm, onClose, requireReason }) {
   };
 
   return (
-    <div className="modal d-block" tabIndex="-1" style={{ background: 'rgba(0,0,0,0.5)' }}>
+    <div className="modal d-block" tabIndex="-1" style={{ background: 'rgba(0,0,0,0.5)', overflowY: 'auto' }}>
       <div className="modal-dialog modal-dialog-centered">
-        <div className="modal-content">
+        <div className="modal-content" style={{ marginTop: 'auto', marginBottom: 'auto' }}>
           <div className="modal-header bg-warning">
             <h5 className="modal-title">⏸️ Put Order #{order.order_id} On Hold</h5>
             <button type="button" className="btn-close" onClick={onClose}></button>
@@ -658,6 +658,7 @@ function App() {
   const [orders, setOrders] = useState([]);
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState('');
+  const [dealerFilter, setDealerFilter] = useState('');
   const [statusFilter, setStatusFilter] = useState('ALL');
   const [startDate, setStartDate] = useState(defaults.start);
   const [endDate, setEndDate] = useState(defaults.end);
@@ -670,7 +671,7 @@ function App() {
   const [showCreateForDealer, setShowCreateForDealer] = useState(false);
   const [showColumnPicker, setShowColumnPicker] = useState(false);
   const [visibleCols, setVisibleCols] = useState({
-    dealer: IS_ADMIN,
+    dealer: IS_ADMIN_OR_OFFICE,
     product: true,
     qty: true,
     party: true,
@@ -733,7 +734,7 @@ function App() {
 
   useEffect(() => {
     load();
-    if (!IS_ADMIN) {
+    if (!IS_ADMIN_OR_OFFICE) {
       fetch('/api/dealer/limit', { credentials: 'include' })
         .then(r => r.json())
         .then(data => setDealerLimit(data))
@@ -753,7 +754,13 @@ function App() {
     const d = getDefaultDates();
     setStartDate(d.start);
     setEndDate(d.end);
-    load({ startDate: d.start, endDate: d.end });
+    setSearch('');
+    setStatusFilter('ALL');
+    setDealerFilter('');
+    // Use a callback to load after state updates
+    Promise.resolve().then(() => {
+      load();
+    });
   };
 
   const changeStatus = async (orderId, newStatus, extra = {}) => {
@@ -784,10 +791,11 @@ function App() {
   };
 
   const filtered = orders.filter(o => {
-    const matchSearch = (o.product_name + ' ' + o.delivery_location + ' ' + o.order_id)
+    const matchSearch = !search || (o.product_name + ' ' + (o.dealer_name || '') + ' ' + o.delivery_location + ' ' + o.order_id + ' ' + (o.party_name || ''))
       .toLowerCase().includes(search.toLowerCase());
+    const matchDealer = !dealerFilter || (o.dealer_name && o.dealer_name.toLowerCase().includes(dealerFilter.toLowerCase())) || o.dealer_id === parseInt(dealerFilter);
     const matchStatus = statusFilter === 'ALL' || o.order_status === statusFilter;
-    return matchSearch && matchStatus;
+    return matchSearch && matchDealer && matchStatus;
   });
 
   const sorted = [...filtered].sort((a, b) => {
@@ -835,8 +843,8 @@ function App() {
     }));
     const ws = XLSX.utils.json_to_sheet(data);
     const wb = XLSX.utils.book_new();
-    XLSX.utils.book_append_sheet(wb, ws, IS_ADMIN ? 'All Orders' : 'My Orders');
-    XLSX.writeFile(wb, IS_ADMIN ? 'All_Orders_Dispatch.xlsx' : 'My_Orders.xlsx');
+    XLSX.utils.book_append_sheet(wb, ws, IS_ADMIN_OR_OFFICE ? 'All Orders' : 'My Orders');
+    XLSX.writeFile(wb, IS_ADMIN_OR_OFFICE ? 'All_Orders_Dispatch.xlsx' : 'My_Orders.xlsx');
   };
 
   return (
@@ -893,17 +901,17 @@ function App() {
 
       {/* Orders Table */}
       <div className="card shadow-sm">
-        <div className="card-header bg-white d-flex align-items-center justify-content-between py-3">
-          <h5 className="mb-0 fw-semibold">{IS_ADMIN ? '📊 All Orders & Dispatch' : '📋 My Orders'}</h5>
-          <div className="d-flex gap-2">
+        <div className="card-header bg-white d-flex align-items-center justify-content-between py-2 py-sm-3 flex-wrap gap-2">
+          <h5 className="mb-0 fw-semibold">{IS_ADMIN_OR_OFFICE ? '📊 All Orders & Dispatch' : '📋 My Orders'}</h5>
+          <div className="d-flex gap-1 gap-sm-2 flex-wrap">
             <div className="dropdown position-relative">
               <button className="btn btn-outline-secondary btn-sm" onClick={() => setShowColumnPicker(!showColumnPicker)}>
-                ⚙️ Columns
+                ⚙️ <span className="d-none d-sm-inline">Columns</span>
               </button>
               {showColumnPicker && (
                 <div className="dropdown-menu d-block position-absolute" style={{ right: 0, minWidth: 200, zIndex: 1000 }}>
                   <div className="p-2">
-                    {IS_ADMIN && (
+                    {IS_ADMIN_OR_OFFICE && (
                       <div className="form-check mb-2">
                         <input className="form-check-input" type="checkbox" id="col-dealer" checked={visibleCols.dealer} onChange={() => toggleColumn('dealer')} />
                         <label className="form-check-label" htmlFor="col-dealer">Dealer</label>
@@ -947,71 +955,71 @@ function App() {
                 </div>
               )}
             </div>
-            {IS_ADMIN && (
+            {IS_ADMIN_OR_OFFICE && (
               <>
                 <button className="btn btn-outline-success btn-sm" onClick={exportExcel}>
-                  ⬇️ Download Excel
+                  ⬇️ <span className="d-none d-sm-inline">Excel</span>
                 </button>
                 <button className="btn btn-info btn-sm" onClick={() => setShowCreateForDealer(true)}>
-                  🛒 Create for Dealer
+                  🛒 <span className="d-none d-sm-inline">Create</span>
                 </button>
               </>
             )}
-            {!IS_ADMIN && (
+            {!IS_ADMIN_OR_OFFICE && (
               <a className="btn btn-primary btn-sm" href="/orders?action=new">
-                🛒 Place New Order
+                🛒 <span className="d-none d-sm-inline">Place New</span>
               </a>
             )}
           </div>
         </div>
         <div className="card-body">
           <div className="row mb-3 g-2">
-            <div className="col-md-3">
-              <input className="form-control" placeholder="Search by product, location, order ID…"
+            <div className="col-12 col-lg-3">
+              <input className="form-control form-control-sm" placeholder="Search by dealer, product, party, location, order ID…"
                 value={search} onChange={e => setSearch(e.target.value)} />
             </div>
-            <div className="col-md-2">
+            <div className="col-6 col-lg-3">
               <input
                 type="date"
-                className="form-control"
+                className="form-control form-control-sm"
                 value={startDate}
                 onChange={e => setStartDate(e.target.value)}
                 aria-label="Start Date"
               />
             </div>
-            <div className="col-md-2">
+            <div className={IS_ADMIN ? "col-6 col-lg-2" : "col-6 col-lg-3"}>
               <input
                 type="date"
-                className="form-control"
+                className="form-control form-control-sm"
                 value={endDate}
                 onChange={e => setEndDate(e.target.value)}
                 aria-label="End Date"
               />
             </div>
-            <div className="col-md-2">
-              <select className="form-select" value={statusFilter} onChange={e => setStatusFilter(e.target.value)}>
+            <div className={IS_ADMIN ? "col-12 col-lg-1" : "col-12 col-lg-2"}>
+              <select className="form-select form-select-sm" value={statusFilter} onChange={e => setStatusFilter(e.target.value)}>
                 <option value="ALL">All Statuses</option>
                 {Object.entries(STATUS_CONFIG).map(([k, v]) =>
                   <option key={k} value={k}>{v.text}</option>
                 )}
               </select>
             </div>
-            <div className="col-md-2 d-flex gap-2">
-              <button className="btn btn-outline-primary w-100" onClick={applyDateFilter}>
+            <div className="col-12 col-lg-2 d-flex gap-1 gap-lg-2">
+              <button className="btn btn-outline-primary btn-sm flex-grow-1" onClick={applyDateFilter}>
                 Load
               </button>
-              <button className="btn btn-outline-secondary" onClick={resetDateFilter} title={IS_ADMIN ? 'Clear date filter' : 'Reset to last 2 days'}>
+              <button className="btn btn-outline-secondary btn-sm flex-grow-1" onClick={resetDateFilter} title={IS_ADMIN_OR_OFFICE ? 'Clear date filter' : 'Reset to last 2 days'}>
                 Reset
               </button>
             </div>
-            {!IS_ADMIN && (
+            {!IS_ADMIN_OR_OFFICE && (
               <div className="col-12">
                 <small className="text-muted">
                   Showing orders from the last 2 days. Select a start &amp; end date above and click <strong>Load</strong> to view historical orders.
                 </small>
               </div>
             )}
-            <div className="col-md-1 text-end text-muted small align-self-center">
+            <div className="col-12 col-lg-1 text-lg-end text-muted small mt-2 mt-lg-0">
               {sorted.length} order{sorted.length !== 1 ? 's' : ''}
             </div>
           </div>
@@ -1025,27 +1033,27 @@ function App() {
             <div className="table-responsive">
               <table className="table table-hover table-bordered align-middle mb-0">
                 <thead className="table-light">
-                  <tr>
-                    <SortTh col="order_id" style={{ width: 90 }}>Order Id</SortTh>
-                    {IS_ADMIN && visibleCols.dealer && <SortTh col="dealer_name">Dealer</SortTh>}
-                    {visibleCols.product && <SortTh col="product_name">Product</SortTh>}
-                    {visibleCols.qty && <SortTh col="quantity" style={{ width: 100 }}>Qty</SortTh>}
-                    {visibleCols.party && <SortTh col="party_name">Party</SortTh>}
-                    {visibleCols.loadType && <SortTh col="load_type_desc">Load Type</SortTh>}
-                    {visibleCols.prefLocation && <SortTh col="preferred_location_desc">Pref. Location</SortTh>}
-                    {visibleCols.orderDate && <SortTh col="order_date" style={{ width: 110 }}>Order Date</SortTh>}
-                    {visibleCols.status && <th style={{ width: 130, textAlign: 'center' }}>Status</th>}
-                    {visibleCols.dispatch && <th style={{ width: 120, textAlign: 'center' }}>Dispatch</th>}
-                    <th style={{ width: 180, textAlign: 'center' }}>Action</th>
+                  <tr style={{ fontSize: 'clamp(0.75rem, 2vw, 0.875rem)' }}>
+                    <SortTh col="order_id" style={{ width: 70, minWidth: 70 }}>Order Id</SortTh>
+                    {IS_ADMIN_OR_OFFICE && visibleCols.dealer && <SortTh col="dealer_name" style={{ minWidth: 80 }}>Dealer</SortTh>}
+                    {visibleCols.product && <SortTh col="product_name" style={{ minWidth: 80 }}>Product</SortTh>}
+                    {visibleCols.qty && <SortTh col="quantity" style={{ width: 70, minWidth: 70 }}>Qty</SortTh>}
+                    {visibleCols.party && <SortTh col="party_name" style={{ minWidth: 80 }}>Party</SortTh>}
+                    {visibleCols.loadType && <SortTh col="load_type_desc" style={{ minWidth: 80 }}>Load Type</SortTh>}
+                    {visibleCols.prefLocation && <SortTh col="preferred_location_desc" style={{ minWidth: 100 }}>Pref. Loc</SortTh>}
+                    {visibleCols.orderDate && <SortTh col="order_date" style={{ width: 100, minWidth: 100 }}>Order Date</SortTh>}
+                    {visibleCols.status && <th style={{ width: 100, minWidth: 100, textAlign: 'center' }}>Status</th>}
+                    {visibleCols.dispatch && <th style={{ width: 80, minWidth: 80, textAlign: 'center' }}>Dispatch</th>}
+                    <th style={{ width: 140, minWidth: 140, textAlign: 'center' }}>Action</th>
                   </tr>
                 </thead>
                 <tbody>
                   {sorted.length === 0 ? (
-                    <tr><td colSpan={Object.values(visibleCols).filter(Boolean).length + (IS_ADMIN ? 2 : 1)} className="text-center text-muted py-4">No orders found</td></tr>
+                    <tr><td colSpan={Object.values(visibleCols).filter(Boolean).length + (IS_ADMIN_OR_OFFICE ? 2 : 1)} className="text-center text-muted py-4">No orders found</td></tr>
                   ) : sorted.map(o => (
                     <tr key={o.order_id}>
                       <td className="fw-semibold text-primary">#{o.order_id}</td>
-                      {IS_ADMIN && visibleCols.dealer && <td className="text-muted small">{o.dealer_name || '—'}</td>}
+                      {IS_ADMIN_OR_OFFICE && visibleCols.dealer && <td className="text-muted small">{o.dealer_name || '—'}</td>}
                       {visibleCols.product && <td>{o.product_name}</td>}
                       {visibleCols.qty && <td>{o.quantity} {o.unit}</td>}
                       {visibleCols.party && <td>{o.party_name || <span className="text-muted">—</span>}</td>}
@@ -1072,42 +1080,123 @@ function App() {
                         )}
                       </td>}
                       <td className="text-center">
-                        <div className="d-flex justify-content-center gap-2 flex-wrap">
-                          <button className="btn btn-outline-primary btn-sm"
+                        {/* DESKTOP: Compact text links with pipes */}
+                        <div className="d-none d-md-block" style={{ fontSize: '0.85rem', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                          <button className="link-primary" style={{ border: 'none', background: 'none', cursor: 'pointer', padding: 0, textDecoration: 'underline' }}
                             onClick={() => setSelectedOrder(o)}>
                             View
                           </button>
                           {o.dispatch && o.dispatch.driver_phone && (
-                            <a
-                              className="btn btn-outline-success btn-sm"
-                              href={`/tracking?driver=${encodeURIComponent(o.dispatch.driver_phone)}&order=${o.order_id}`}
-                            >
-                              Track
-                            </a>
+                            <>
+                              {' | '}
+                              <a
+                                href={`/tracking?driver=${encodeURIComponent(o.dispatch.driver_phone)}&order=${o.order_id}`}
+                                style={{ textDecoration: 'underline', cursor: 'pointer' }}
+                              >
+                                Track
+                              </a>
+                            </>
                           )}
                           {IS_ADMIN && o.order_status === 'ORDER_PLACED' && (
                             <>
-                              <button className="btn btn-success btn-sm" title="Accept this order" onClick={() => changeStatus(o.order_id, 'ACCEPTED')}>Accept</button>
-                              <button className="btn btn-outline-secondary btn-sm" title="Put order on hold" onClick={() => setHoldOrder(o)}>On Hold</button>
+                              {' | '}
+                              <button className="link-success" style={{ border: 'none', background: 'none', cursor: 'pointer', padding: 0, textDecoration: 'underline' }} onClick={() => changeStatus(o.order_id, 'ACCEPTED')}>Accept</button>
+                              {' | '}
+                              <button className="link-secondary" style={{ border: 'none', background: 'none', cursor: 'pointer', padding: 0, textDecoration: 'underline' }} onClick={() => setHoldOrder(o)}>Hold</button>
                             </>
                           )}
                           {IS_ADMIN && o.order_status === 'ACCEPTED' && (
-                            <button className="btn btn-primary btn-sm" title="Mark as dispatched" onClick={() => changeStatus(o.order_id, 'DISPATCHED')}>Dispatch</button>
+                            <>
+                              {' | '}
+                              <button className="link-primary" style={{ border: 'none', background: 'none', cursor: 'pointer', padding: 0, textDecoration: 'underline' }} onClick={() => changeStatus(o.order_id, 'DISPATCHED')}>Dispatch</button>
+                            </>
                           )}
                           {IS_ADMIN_OR_OFFICE && o.order_status === 'ON_HOLD' && o.on_hold_by_role !== 'DEALER' && (
-                            <button className="btn btn-warning btn-sm" title="Unhold order" onClick={() => changeStatus(o.order_id, 'ORDER_PLACED')}>Unhold</button>
+                            <>
+                              {' | '}
+                              <button className="link-warning" style={{ border: 'none', background: 'none', cursor: 'pointer', padding: 0, textDecoration: 'underline' }} onClick={() => changeStatus(o.order_id, 'ORDER_PLACED')}>Unhold</button>
+                            </>
                           )}
                           {IS_ADMIN_OR_OFFICE && o.order_status === 'ON_HOLD' && o.on_hold_by_role === 'DEALER' && (
-                            <span className="badge bg-secondary" title="Put on hold by dealer — only dealer can reopen">🔒 Dealer Hold</span>
+                            <>
+                              {' | '}
+                              <span className="text-muted" style={{ fontSize: '0.8rem' }}>🔒 Dealer Hold</span>
+                            </>
                           )}
                           {!IS_ADMIN && o.order_status === 'ORDER_PLACED' && (
-                            <button className="btn btn-outline-secondary btn-sm" title="Put this order on hold" onClick={() => setHoldOrder(o)}>On Hold</button>
+                            <>
+                              {' | '}
+                              <button className="link-secondary" style={{ border: 'none', background: 'none', cursor: 'pointer', padding: 0, textDecoration: 'underline' }} onClick={() => setHoldOrder(o)}>Hold</button>
+                            </>
                           )}
                           {!IS_ADMIN && o.order_status === 'ON_HOLD' && o.on_hold_by_role === 'DEALER' && (
-                            <button className="btn btn-warning btn-sm" title="Unhold order" onClick={() => changeStatus(o.order_id, 'ORDER_PLACED')}>Unhold</button>
+                            <>
+                              {' | '}
+                              <button className="link-warning" style={{ border: 'none', background: 'none', cursor: 'pointer', padding: 0, textDecoration: 'underline' }} onClick={() => changeStatus(o.order_id, 'ORDER_PLACED')}>Unhold</button>
+                            </>
                           )}
                           {!IS_ADMIN && (o.order_status === 'ACCEPTED' || o.order_status === 'DISPATCHED') && (
-                            <span className="text-muted small" title="Place a new order for extra units">🔒 Cannot edit — place a new order for extra units</span>
+                            <span className="text-muted" style={{ fontSize: '0.8rem' }}>🔒 Edit Locked</span>
+                          )}
+                        </div>
+
+                        {/* MOBILE: Text links with pipes (same as desktop but smaller) */}
+                        <div className="d-md-none" style={{ fontSize: '0.75rem', lineHeight: 1.4 }}>
+                          <button className="link-primary" style={{ border: 'none', background: 'none', cursor: 'pointer', padding: 0, textDecoration: 'underline' }}
+                            onClick={() => setSelectedOrder(o)}>
+                            View
+                          </button>
+                          {o.dispatch && o.dispatch.driver_phone && (
+                            <>
+                              {' | '}
+                              <a
+                                href={`/tracking?driver=${encodeURIComponent(o.dispatch.driver_phone)}&order=${o.order_id}`}
+                                style={{ textDecoration: 'underline', cursor: 'pointer' }}
+                              >
+                                Track
+                              </a>
+                            </>
+                          )}
+                          {IS_ADMIN && o.order_status === 'ORDER_PLACED' && (
+                            <>
+                              {' | '}
+                              <button className="link-success" style={{ border: 'none', background: 'none', cursor: 'pointer', padding: 0, textDecoration: 'underline' }} onClick={() => changeStatus(o.order_id, 'ACCEPTED')}>Accept</button>
+                              {' | '}
+                              <button className="link-secondary" style={{ border: 'none', background: 'none', cursor: 'pointer', padding: 0, textDecoration: 'underline' }} onClick={() => setHoldOrder(o)}>Hold</button>
+                            </>
+                          )}
+                          {IS_ADMIN && o.order_status === 'ACCEPTED' && (
+                            <>
+                              {' | '}
+                              <button className="link-primary" style={{ border: 'none', background: 'none', cursor: 'pointer', padding: 0, textDecoration: 'underline' }} onClick={() => changeStatus(o.order_id, 'DISPATCHED')}>Dispatch</button>
+                            </>
+                          )}
+                          {IS_ADMIN_OR_OFFICE && o.order_status === 'ON_HOLD' && o.on_hold_by_role !== 'DEALER' && (
+                            <>
+                              {' | '}
+                              <button className="link-warning" style={{ border: 'none', background: 'none', cursor: 'pointer', padding: 0, textDecoration: 'underline' }} onClick={() => changeStatus(o.order_id, 'ORDER_PLACED')}>Unhold</button>
+                            </>
+                          )}
+                          {IS_ADMIN_OR_OFFICE && o.order_status === 'ON_HOLD' && o.on_hold_by_role === 'DEALER' && (
+                            <>
+                              {' | '}
+                              <span className="text-muted" style={{ fontSize: '0.7rem' }}>🔒 Dealer Hold</span>
+                            </>
+                          )}
+                          {!IS_ADMIN && o.order_status === 'ORDER_PLACED' && (
+                            <>
+                              {' | '}
+                              <button className="link-secondary" style={{ border: 'none', background: 'none', cursor: 'pointer', padding: 0, textDecoration: 'underline' }} onClick={() => setHoldOrder(o)}>Hold</button>
+                            </>
+                          )}
+                          {!IS_ADMIN && o.order_status === 'ON_HOLD' && o.on_hold_by_role === 'DEALER' && (
+                            <>
+                              {' | '}
+                              <button className="link-warning" style={{ border: 'none', background: 'none', cursor: 'pointer', padding: 0, textDecoration: 'underline' }} onClick={() => changeStatus(o.order_id, 'ORDER_PLACED')}>Unhold</button>
+                            </>
+                          )}
+                          {!IS_ADMIN && (o.order_status === 'ACCEPTED' || o.order_status === 'DISPATCHED') && (
+                            <span className="text-muted" style={{ fontSize: '0.7rem' }}>🔒 Edit Locked</span>
                           )}
                         </div>
                       </td>
