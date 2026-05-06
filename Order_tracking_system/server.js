@@ -2,12 +2,26 @@ const express = require('express');
 const session = require('express-session');
 const path = require('path');
 const { loadParameters } = require('./config/parameterStore');
+const { initializeS3 } = require('./services/s3Service');
 
 // Load parameters from Parameter Store first, then start app
 (async () => {
   try {
     await loadParameters();
-    
+
+    // Initialize S3 service
+    // AWS SDK will use default credential chain:
+    // 1. Environment variables (AWS_ACCESS_KEY_ID, AWS_SECRET_ACCESS_KEY)
+    // 2. AWS credentials file (~/.aws/credentials) — from `aws configure`
+    // 3. AWS config file (~/.aws/config)
+    // 4. IAM role (on EC2/EBS)
+    const s3Config = {
+      bucket: process.env.S3_BUCKET || process.env.AWS_S3_BUCKET_NAME || 'odts-dev-s3-receipt',
+      region: process.env.AWS_REGION || process.env.AWS_S3_REGION || 'ap-south-1',
+    };
+
+    initializeS3(s3Config);
+
     // Now require routes and db (which depend on environment variables)
     const authRoutes = require('./routes/auth');
     const productRoutes = require('./routes/products');
@@ -28,8 +42,8 @@ const { loadParameters } = require('./config/parameterStore');
     app.set('view engine', 'ejs');
     app.set('views', path.join(__dirname, 'views'));
 
-    app.use(express.urlencoded({ extended: true }));
-    app.use(express.json());
+    app.use(express.urlencoded({ extended: true, limit: '50mb' }));
+    app.use(express.json({ limit: '50mb' }));
     app.use(express.static(path.join(__dirname, 'public')));
 
     app.use(session({

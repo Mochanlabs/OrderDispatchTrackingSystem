@@ -1,6 +1,7 @@
 const express = require('express');
 const router = express.Router();
 const pool = require('../db');
+const { generatePresignedUploadUrl, uploadFileToS3 } = require('../services/s3Service');
 
 function ensureDispatcher(req, res, next) {
   if (!req.session?.user) return res.redirect('/signin');
@@ -104,11 +105,56 @@ router.post('/api/dispatcher/orders/:id/accept', ensureDispatcher, async (req, r
   }
 });
 
+// POST file upload endpoint (backend uploads to S3)
+router.post('/api/dispatcher/upload-receipt', ensureDispatcher, async (req, res) => {
+  try {
+    const { order_id, dealer_id, file_name, file_type, file_data } = req.body;
+
+    if (!order_id || !dealer_id || !file_name || !file_type || !file_data) {
+      return res.status(400).json({ error: 'Missing required fields: order_id, dealer_id, file_name, file_type, file_data' });
+    }
+
+    // Convert base64 to buffer
+    const fileBuffer = Buffer.from(file_data, 'base64');
+
+    console.log(`[Dispatcher] Receipt upload request: order=${order_id}, dealer=${dealer_id}, file=${file_name}, size=${fileBuffer.length} bytes`);
+    const uploadResult = await uploadFileToS3(dealer_id, order_id, fileBuffer, file_name, file_type);
+    res.json({
+      success: true,
+      image_url: uploadResult.s3Url,
+      image_type: file_type,
+      image_original_size: uploadResult.fileSize,
+    });
+  } catch (error) {
+    console.error('[Dispatcher] Receipt upload error:', error);
+    res.status(500).json({ error: `Failed to upload receipt: ${error.message}` });
+  }
+});
+
+// POST presigned URL for receipt upload (legacy, kept for backward compatibility)
+router.post('/api/dispatcher/presigned-url', ensureDispatcher, async (req, res) => {
+  try {
+    const { order_id, dealer_id, file_name, file_type } = req.body;
+
+    if (!order_id || !dealer_id || !file_name || !file_type) {
+      return res.status(400).json({ error: 'Missing required fields: order_id, dealer_id, file_name, file_type' });
+    }
+
+    console.log(`[Dispatcher] Presigned URL request: order=${order_id}, dealer=${dealer_id}, file=${file_name}, type=${file_type}`);
+    const presignedUrl = await generatePresignedUploadUrl(dealer_id, order_id, file_name, file_type);
+    res.json(presignedUrl);
+  } catch (error) {
+    console.error('[Dispatcher] presigned URL error:', error);
+    console.error('[Dispatcher] Error details:', error.message, error.code);
+    res.status(500).json({ error: `Failed to generate upload URL: ${error.message}` });
+  }
+});
+
 // POST dispatch: ACCEPTED → DISPATCHED + create/update order_dispatch record
 router.post('/api/dispatcher/orders/:id/dispatch', ensureDispatcher, async (req, res) => {
   try {
     const orderId = parseInt(req.params.id);
-    const { vehicle_number, driver_name, driver_phone, bilty_number, actual_loading_location_code } = req.body;
+    const { vehicle_number, driver_name, driver_phone, bilty_number, actual_loading_location_code, image_url, image_type, image_original_size, image_compressed_size } = req.body;
 
     if (!vehicle_number?.trim())                return res.status(400).json({ error: 'Vehicle number is required' });
     if (!driver_phone?.trim())                  return res.status(400).json({ error: 'Driver phone is required' });
@@ -140,21 +186,31 @@ router.post('/api/dispatcher/orders/:id/dispatch', ensureDispatcher, async (req,
                 driver_phone                 = $3,
                 bilty_number                 = $4,
                 actual_loading_location_code = $5,
+                image_url                    = COALESCE($8, image_url),
+                image_type                   = COALESCE($9, image_type),
+                image_original_size          = COALESCE($10, image_original_size),
+                image_compressed_size        = COALESCE($11, image_compressed_size),
+                image_uploaded_at            = CASE WHEN $8 IS NOT NULL THEN NOW() ELSE image_uploaded_at END,
                 updated_by                   = $6,
                 updated_at                   = NOW()
           WHERE dispatch_id = $7`,
         [vehicleUpper, driver_name || null, driver_phone.trim(),
          bilty_number.trim(), actual_loading_location_code.trim(),
-         userId, existingDispatch.rows[0].dispatch_id]
+         userId, existingDispatch.rows[0].dispatch_id,
+         image_url || null, image_type || null, image_original_size || null, image_compressed_size || null]
       );
     } else {
       await pool.query(
         `INSERT INTO odts.order_dispatch
            (order_id, dispatch_vehicle_number, driver_name, driver_phone,
-            bilty_number, actual_loading_location_code, created_by, updated_by, created_at, updated_at)
-         VALUES ($1, $2, $3, $4, $5, $6, $7, $7, NOW(), NOW())`,
+            bilty_number, actual_loading_location_code, image_url, image_type,
+            image_original_size, image_compressed_size, image_uploaded_at,
+            created_by, updated_by, created_at, updated_at)
+         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $12, NOW(), NOW())`,
         [orderId, vehicleUpper, driver_name || null, driver_phone.trim(),
-         bilty_number.trim(), actual_loading_location_code.trim(), userId]
+         bilty_number.trim(), actual_loading_location_code.trim(),
+         image_url || null, image_type || null, image_original_size || null,
+         image_compressed_size || null, image_url ? 'NOW()' : null, userId]
       );
     }
 

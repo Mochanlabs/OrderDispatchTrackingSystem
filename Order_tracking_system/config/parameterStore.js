@@ -35,11 +35,12 @@ async function loadParameters() {
       `/odts/${paramEnv}/DB_SSL`,
       `/odts/${paramEnv}/DB_SSL_REJECT_UNAUTHORIZED`,
       `/odts/${paramEnv}/SESSION_SECRET`,
+      `/odts/${paramEnv}/PORT`,
+      `/odts/${paramEnv}/S3_BUCKET`,
       `/odts/${paramEnv}/FIREBASE_API_KEY`,
       `/odts/${paramEnv}/FIREBASE_AUTH_DOMAIN`,
       `/odts/${paramEnv}/FIREBASE_DATABASE_URL`,
       `/odts/${paramEnv}/FIREBASE_PROJECT_ID`,
-      `/odts/${paramEnv}/PORT`,
     ];
 
     // AWS SSM GetParameters has a max of 10 parameters per call

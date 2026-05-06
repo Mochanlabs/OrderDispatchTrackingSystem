@@ -317,6 +317,49 @@ function DispatchModal({ order, onClose }) {
                   )}
                 </div>
 
+                {/* Receipt Image */}
+                {d?.image_url && (
+                  <div className="mt-4">
+                    <h6 className="fw-bold text-muted mb-3 text-uppercase small">📸 Dispatch Receipt</h6>
+                    <div className="p-3 bg-light rounded">
+                      <div className="text-center mb-3">
+                        <img src={d.image_url} alt="Dispatch Receipt" style={{maxWidth: '100%', maxHeight: 300, borderRadius: 4}} />
+                      </div>
+                      <div className="row g-2 text-muted small">
+                        {d.image_type && (
+                          <div className="col-6">
+                            <div className="text-muted">File Type</div>
+                            <div className="fw-semibold">{d.image_type}</div>
+                          </div>
+                        )}
+                        {d.image_original_size && (
+                          <div className="col-6">
+                            <div className="text-muted">Original Size</div>
+                            <div className="fw-semibold">{(d.image_original_size / 1024).toFixed(1)} KB</div>
+                          </div>
+                        )}
+                        {d.image_compressed_size && (
+                          <div className="col-6">
+                            <div className="text-muted">Compressed Size</div>
+                            <div className="fw-semibold">{(d.image_compressed_size / 1024).toFixed(1)} KB</div>
+                          </div>
+                        )}
+                        {d.image_uploaded_at && (
+                          <div className="col-6">
+                            <div className="text-muted">Uploaded At</div>
+                            <div className="fw-semibold">{formatDateTime(d.image_uploaded_at)}</div>
+                          </div>
+                        )}
+                      </div>
+                      <div className="mt-3">
+                        <a href={d.image_url} target="_blank" rel="noopener noreferrer" className="btn btn-sm btn-outline-primary">
+                          🔍 Open Full Size
+                        </a>
+                      </div>
+                    </div>
+                  </div>
+                )}
+
                 {/* Progress Tracker */}
                 <div className="mt-4">
                   <h6 className="fw-bold text-muted mb-3 text-uppercase small">Order Progress</h6>
@@ -1152,9 +1195,16 @@ function App() {
                       </td>}
                       {visibleCols.dispatch && <td className="text-center">
                         {o.dispatch ? (
-                          <span className="text-success small fw-semibold">
-                            🚛 {o.dispatch.vehicle_no}
-                          </span>
+                          <div>
+                            <span className="text-success small fw-semibold">
+                              🚛 {o.dispatch.vehicle_no}
+                            </span>
+                            {o.dispatch?.image_url && (
+                              <div className="mt-1">
+                                <span className="badge bg-info small">📸 Receipt</span>
+                              </div>
+                            )}
+                          </div>
                         ) : (
                           <span className="text-muted small">—</span>
                         )}
@@ -1165,6 +1215,17 @@ function App() {
                             onClick={() => setSelectedOrder(o)}>
                             View
                           </button>
+                          {o.dispatch?.image_url && (
+                            <a
+                              className="btn btn-info btn-sm"
+                              href={o.dispatch.image_url}
+                              target="_blank"
+                              rel="noopener noreferrer"
+                              title="View dispatch receipt"
+                            >
+                              📸 Receipt
+                            </a>
+                          )}
                           {o.dispatch && o.dispatch.driver_phone && (
                             <a
                               className="btn btn-outline-success btn-sm"

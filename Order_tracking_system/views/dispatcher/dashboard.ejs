@@ -2,6 +2,7 @@
 <script src="https://cdn.jsdelivr.net/npm/react@18/umd/react.development.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/react-dom@18/umd/react-dom.development.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/@babel/standalone/babel.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/browser-image-compression@2.0.0/dist/browser-image-compression.js"></script>
 
 <nav aria-label="breadcrumb" class="mb-3">
   <ol class="breadcrumb">
@@ -67,9 +68,124 @@ function DispatchModal({ order, loadingLocations, onSubmit, onClose }) {
     actual_loading_location_code: '',
   });
   const [saving, setSaving] = useState(false);
-  const [err, setErr]       = useState('');
+  const [err, setErr] = useState('');
+
+  // Receipt upload states
+  const [selectedFile, setSelectedFile] = useState(null);
+  const [imagePreview, setImagePreview] = useState(null);
+  const [uploading, setUploading] = useState(false);
+  const [uploadProgress, setUploadProgress] = useState(0);
+  const [uploadedImageUrl, setUploadedImageUrl] = useState(null);
+  const [imageMetadata, setImageMetadata] = useState(null);
+  const [skipUploadConfirm, setSkipUploadConfirm] = useState(false);
 
   const set = (k, v) => setForm(f => ({ ...f, [k]: v }));
+
+  const handleFileSelect = async (e) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    // Validate file type
+    const validTypes = ['image/jpeg', 'image/png', 'image/jpg', 'image/gif', 'image/webp'];
+    if (!validTypes.includes(file.type)) {
+      setErr('Please select a valid image file (JPG, PNG, GIF, WebP)');
+      return;
+    }
+
+    setSelectedFile(file);
+    const reader = new FileReader();
+    reader.onload = (evt) => setImagePreview(evt.target.result);
+    reader.readAsDataURL(file);
+    setErr('');
+    setSkipUploadConfirm(false);
+  };
+
+  const uploadReceipt = async () => {
+    if (!selectedFile) return;
+
+    try {
+      setUploading(true);
+      setErr('');
+
+      let fileToUpload = selectedFile;
+      let compressedSize = null;
+
+      // Compress if file > 1MB (if ImageCompression library is available)
+      if (selectedFile.size > 1024 * 1024 && typeof window.ImageCompression !== 'undefined') {
+        setUploadProgress(10);
+        try {
+          const options = {
+            maxSizeMB: 1,
+            maxWidthOrHeight: 1920,
+            useWebWorker: true,
+          };
+          fileToUpload = await window.ImageCompression.compress(selectedFile, options);
+          compressedSize = fileToUpload.size;
+          console.log(`Compressed image: ${selectedFile.size} → ${fileToUpload.size} bytes`);
+        } catch (compressError) {
+          console.warn('Image compression failed, using original:', compressError.message);
+          // Continue with original file if compression fails
+        }
+      }
+
+      setUploadProgress(30);
+
+      // Read file as base64
+      console.log('Reading file...');
+      const fileBase64 = await new Promise((resolve, reject) => {
+        const reader = new FileReader();
+        reader.onload = () => {
+          const base64String = reader.result.split(',')[1];
+          resolve(base64String);
+        };
+        reader.onerror = reject;
+        reader.readAsDataURL(fileToUpload);
+      });
+
+      setUploadProgress(50);
+
+      // Upload to backend
+      console.log('Uploading receipt to backend...');
+      const uploadRes = await fetch('/api/dispatcher/upload-receipt', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          order_id: order.order_id,
+          dealer_id: order.dealer_id,
+          file_name: fileToUpload.name,
+          file_type: fileToUpload.type,
+          file_data: fileBase64,
+        }),
+      });
+
+      if (!uploadRes.ok) {
+        const errorData = await uploadRes.json();
+        throw new Error(`Failed to upload: ${errorData.error || 'Unknown error'}`);
+      }
+
+      const uploadResult = await uploadRes.json();
+      console.log('Receipt uploaded successfully:', uploadResult.image_url);
+
+      setUploadProgress(90);
+
+      // Store metadata
+      setUploadedImageUrl(uploadResult.image_url);
+      setImageMetadata({
+        image_url: uploadResult.image_url,
+        image_type: uploadResult.image_type,
+        image_original_size: uploadResult.image_original_size,
+        image_compressed_size: compressedSize,
+      });
+
+      setUploadProgress(100);
+      setUploading(false);
+    } catch (error) {
+      console.error('Upload error:', error);
+      setErr(`Upload failed: ${error.message}`);
+      setUploading(false);
+      setUploadProgress(0);
+    }
+  };
 
   const submit = async () => {
     if (!form.vehicle_number.trim())                return setErr('Vehicle number is required');
@@ -77,9 +193,17 @@ function DispatchModal({ order, loadingLocations, onSubmit, onClose }) {
     if (!/^\d{10}$/.test(form.driver_phone.trim())) return setErr('Driver phone must be exactly 10 digits');
     if (!form.bilty_number.trim())                  return setErr('Bilty number is required');
     if (!form.actual_loading_location_code)         return setErr('Actual loading location is required');
+
+    // Check if image is selected but not uploaded
+    if (selectedFile && !uploadedImageUrl && !skipUploadConfirm) {
+      setSkipUploadConfirm(true);
+      return;
+    }
+
     setErr('');
     setSaving(true);
-    await onSubmit(order.order_id, form);
+    const finalForm = { ...form, ...imageMetadata };
+    await onSubmit(order.order_id, finalForm);
     setSaving(false);
   };
 
@@ -181,9 +305,91 @@ function DispatchModal({ order, loadingLocations, onSubmit, onClose }) {
               </div>
             </div>
 
+            {/* Receipt upload section */}
+            <div className="mb-4 p-3 border rounded" style={{ background: '#fffbf0', borderColor: '#ffe0b2' }}>
+              <h6 className="fw-bold text-muted text-uppercase small mb-3">📸 Receipt Photo (Optional)</h6>
+
+              {!uploadedImageUrl ? (
+                <>
+                  <div className="mb-3">
+                    <input
+                      type="file"
+                      accept="image/*"
+                      onChange={handleFileSelect}
+                      disabled={uploading}
+                      className="form-control"
+                    />
+                    <small className="text-muted d-block mt-1">Accepted: JPG, PNG, GIF, WebP. Max 1 MB after compression.</small>
+                  </div>
+
+                  {imagePreview && (
+                    <div className="mb-3">
+                      <div className="mb-2">
+                        <img src={imagePreview} alt="Preview" style={{ maxWidth: '100%', maxHeight: 150, borderRadius: 4 }} />
+                      </div>
+                      {!uploading && (
+                        <button
+                          type="button"
+                          className="btn btn-sm btn-primary"
+                          onClick={uploadReceipt}
+                          disabled={uploading}
+                        >
+                          📤 Upload Receipt
+                        </button>
+                      )}
+                    </div>
+                  )}
+
+                  {uploading && (
+                    <div className="mb-3">
+                      <div className="progress" style={{ height: 24 }}>
+                        <div
+                          className="progress-bar progress-bar-striped progress-bar-animated"
+                          style={{ width: `${uploadProgress}%` }}
+                        >
+                          {uploadProgress}%
+                        </div>
+                      </div>
+                    </div>
+                  )}
+                </>
+              ) : (
+                <div className="alert alert-success py-2 mb-0">
+                  ✅ Receipt uploaded successfully
+                </div>
+              )}
+
+              {skipUploadConfirm && !uploadedImageUrl && (
+                <div className="alert alert-warning py-2 mt-2 mb-0">
+                  <strong>⚠️ No receipt uploaded</strong>
+                  <p className="mb-2 mt-2">You have not uploaded a receipt for this order. Do you want to continue without it?</p>
+                  <div className="btn-group btn-group-sm" role="group">
+                    <button
+                      type="button"
+                      className="btn btn-warning"
+                      onClick={() => setSkipUploadConfirm(false)}
+                    >
+                      No, Upload Receipt
+                    </button>
+                    <button
+                      type="button"
+                      className="btn btn-outline-warning"
+                      onClick={() => {
+                        setSkipUploadConfirm(false);
+                        setSaving(true);
+                        onSubmit(order.order_id, { ...form, ...imageMetadata });
+                      }}
+                    >
+                      Yes, Continue Without Receipt
+                    </button>
+                  </div>
+                </div>
+              )}
+            </div>
+
             {/* Dispatch form */}
             <h6 className="fw-bold text-muted text-uppercase small mb-3">Enter Dispatch Details</h6>
-            {err && <div className="alert alert-danger py-2 mb-3">{err}</div>}
+            {err && !skipUploadConfirm && <div className="alert alert-danger py-2 mb-3">{err}</div>}
 
             <div className="row g-3">
               <div className="col-md-6">

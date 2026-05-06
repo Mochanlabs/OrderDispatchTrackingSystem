@@ -2,6 +2,7 @@ const express = require('express');
 const router = express.Router();
 const pool = require('../db');
 const { sendAlert } = require('../services/smsService');
+const { generatePresignedReadUrl } = require('../services/s3Service');
 
 function ensureAuth(req, res, next) {
   if (!req.session || !req.session.user) return res.redirect('/signin');
@@ -83,9 +84,45 @@ function toOrderShape(row) {
       dispatch_status:   null,
       expected_delivery: null,
       actual_delivery:   null,
+      image_url:         row.image_url || null,
+      image_type:        row.image_type || null,
+      image_original_size: row.image_original_size || null,
+      image_compressed_size: row.image_compressed_size || null,
+      image_uploaded_at: row.image_uploaded_at || null,
     };
   }
   return order;
+}
+
+// Generate presigned URLs for receipt images
+async function addPresignedUrlsToOrders(orders) {
+  try {
+    for (const order of orders) {
+      if (order.dispatch && order.dispatch.image_url && !order.dispatch.image_url.includes('?')) {
+        // Extract S3 key from URL (e.g., "https://bucket.s3.region.amazonaws.com/receipts/2026/05/05/4/O9_timestamp.jpg" → "receipts/2026/05/05/4/O9_timestamp.jpg")
+        const receiptIndex = order.dispatch.image_url.indexOf('/receipts/');
+        let s3Key = null;
+        if (receiptIndex !== -1) {
+          s3Key = order.dispatch.image_url.substring(receiptIndex + 1); // Remove leading slash
+        }
+
+        if (s3Key) {
+          try {
+            console.log(`[Orders] Generating presigned URL for: ${s3Key}`);
+            const presignedUrl = await generatePresignedReadUrl(s3Key);
+            order.dispatch.image_url = presignedUrl;
+            console.log(`[Orders] Presigned URL generated successfully`);
+          } catch (err) {
+            console.error(`[Orders] Failed to generate presigned URL for ${s3Key}:`, err.message);
+            // Keep original URL if presigned URL generation fails
+          }
+        }
+      }
+    }
+  } catch (err) {
+    console.error('[Orders] Error adding presigned URLs:', err.message);
+  }
+  return orders;
 }
 
 async function getAdminPhone() {
@@ -163,6 +200,7 @@ async function fetchOrders({ dealerId, startDate, endDate }) {
            pl.code_desc  AS preferred_location_desc,
            od.dispatch_id, od.dispatch_vehicle_number, od.driver_name, od.driver_phone,
            od.bilty_number, od.actual_loading_location_code, od.created_at AS dispatch_created_at,
+           od.image_url, od.image_type, od.image_original_size, od.image_compressed_size, od.image_uploaded_at,
            ${ITEMS_SUBQUERY}
     FROM odts.dealer_orders o
     LEFT JOIN odts.dealers       d  ON d.dealer_id  = o.dealer_id
@@ -246,7 +284,9 @@ router.get('/orders/new', ensureDealer, (req, res) => {
 router.get('/api/admin/orders', ensureDealer, async (req, res) => {
   try {
     const { startDate, endDate } = req.query;
-    res.json(await fetchOrders({ startDate, endDate }));
+    let orders = await fetchOrders({ startDate, endDate });
+    orders = await addPresignedUrlsToOrders(orders);
+    res.json(orders);
   } catch (e) {
     console.error(e);
     res.status(500).json({ error: 'Server error' });
@@ -277,7 +317,9 @@ router.get('/api/dealer/orders', ensureDealer, async (req, res) => {
     const { startDate, endDate } = req.query;
     const role = req.session.user.role;
     const dealerId = role === 'DEALER' ? req.session.user.dealer_id : null;
-    res.json(await fetchOrders({ dealerId, startDate, endDate }));
+    let orders = await fetchOrders({ dealerId, startDate, endDate });
+    orders = await addPresignedUrlsToOrders(orders);
+    res.json(orders);
   } catch (e) {
     console.error(e);
     res.status(500).json({ error: 'Server error' });
@@ -287,7 +329,9 @@ router.get('/api/dealer/orders', ensureDealer, async (req, res) => {
 router.get('/api/office/orders', ensureAdminOrOfficeExecutive, async (req, res) => {
   try {
     const { startDate, endDate } = req.query;
-    res.json(await fetchOrders({ startDate, endDate }));
+    let orders = await fetchOrders({ startDate, endDate });
+    orders = await addPresignedUrlsToOrders(orders);
+    res.json(orders);
   } catch (e) {
     console.error(e);
     res.status(500).json({ error: 'Server error' });
@@ -297,7 +341,9 @@ router.get('/api/office/orders', ensureAdminOrOfficeExecutive, async (req, res) 
 router.get('/api/sales/orders', ensureSalesOfficer, async (req, res) => {
   try {
     const { startDate, endDate } = req.query;
-    res.json(await fetchOrders({ startDate, endDate }));
+    let orders = await fetchOrders({ startDate, endDate });
+    orders = await addPresignedUrlsToOrders(orders);
+    res.json(orders);
   } catch (e) {
     console.error(e);
     res.status(500).json({ error: 'Server error' });
