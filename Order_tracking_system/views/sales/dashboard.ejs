@@ -12,7 +12,7 @@
 <div id="app-root"></div>
 
 <script type="text/babel">
-const { useState, useEffect } = React;
+const { useState, useEffect, useRef } = React;
 
 const STATUS_CONFIG = {
   ORDER_PLACED: { text: 'Order Placed', icon: '🕐', bg: '#fd7e14', tc: '#fff' },
@@ -67,6 +67,10 @@ function App() {
   const [startDate, setStartDate] = useState('');
   const [endDate, setEndDate] = useState('');
 
+  const [refreshing, setRefreshing] = useState(false);
+  const esRef = useRef(null);
+  const retryRef = useRef(null);
+
   const getDefaultDates = () => {
     const end = new Date();
     const start = new Date();
@@ -108,6 +112,25 @@ function App() {
       .finally(() => setLoading(false));
   }, []);
 
+  // SSE listener for real-time order status updates
+  useEffect(() => {
+    function connect() {
+      const es = new EventSource('/api/orders/events', { withCredentials: true });
+      esRef.current = es;
+      es.addEventListener('order-status-changed', () => {
+        setRefreshing(true);
+        load().finally(() => setRefreshing(false));
+      });
+      es.onerror = () => {
+        es.close();
+        esRef.current = null;
+        retryRef.current = setTimeout(connect, 3000);
+      };
+    }
+    connect();
+    return () => { esRef.current?.close(); clearTimeout(retryRef.current); };
+  }, []);
+
   const applyDateFilter = () => {
     if (startDate && endDate && startDate > endDate) {
       alert('Start Date cannot be later than End Date.');
@@ -140,6 +163,16 @@ function App() {
 
   return (
     <div>
+      {refreshing && (
+        <div style={{
+          position: 'fixed', top: 0, left: 0, right: 0, zIndex: 9999,
+          backgroundColor: '#0d6efd', color: '#fff',
+          textAlign: 'center', padding: '4px 0',
+          fontSize: '0.85rem', fontWeight: 500
+        }}>
+          Refreshing orders...
+        </div>
+      )}
       {/* Summary Cards */}
       <div className="row mb-3">
         <div className="col-6 col-md-2 mb-3">

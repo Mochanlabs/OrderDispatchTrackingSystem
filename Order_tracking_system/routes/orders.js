@@ -3,6 +3,26 @@ const router = express.Router();
 const pool = require('../db');
 const { sendAlert } = require('../services/smsService');
 const { generatePresignedReadUrl } = require('../services/s3Service');
+const { addClient, removeClient, broadcastOrderUpdate } = require('../services/sseService');
+
+async function hasColumn(tableName, columnName) {
+  const r = await pool.query(
+    `SELECT 1
+       FROM information_schema.columns
+      WHERE table_schema = 'odts'
+        AND table_name = $1
+        AND column_name = $2`,
+    [tableName, columnName]
+  );
+  return r.rows.length > 0;
+}
+
+async function getFirstExistingColumn(tableName, candidates) {
+  for (const c of candidates) {
+    if (await hasColumn(tableName, c)) return c;
+  }
+  return null;
+}
 
 function ensureDealer(req, res, next) {
   if (!req.session || !req.session.user) return res.redirect('/signin');
@@ -246,6 +266,29 @@ function ensureAdmin(req, res, next) {
   return next();
 }
 
+// ── Auth middleware for any authenticated user ────────────────────────────────
+function ensureAnyUser(req, res, next) {
+  if (!req.session?.user) return res.status(401).json({ error: 'Unauthorized' });
+  return next();
+}
+
+// ── SSE subscribe endpoint for real-time order updates ────────────────────────
+router.get('/api/orders/events', ensureAnyUser, (req, res) => {
+  res.setHeader('Content-Type', 'text/event-stream');
+  res.setHeader('Cache-Control', 'no-cache');
+  res.setHeader('Connection', 'keep-alive');
+  res.setHeader('X-Accel-Buffering', 'no');
+  res.flushHeaders();
+
+  const { id: userId, role } = req.session.user;
+  const clientId = addClient(res, userId, role);
+  res.write(`event: connected\ndata: {"clientId":${clientId}}\n\n`);
+
+  req.on('close', () => {
+    removeClient(clientId);
+  });
+});
+
 // ── Page routes ────────────────────────────────────────────────────────────
 
 router.get('/orders', ensureDealer, (req, res) => {
@@ -348,6 +391,10 @@ router.get('/api/sales/orders', ensureSalesOfficer, async (req, res) => {
 });
 
 // ── Sales Report API ───────────────────────────────────────────────────────────
+// Sales Report Monthly Data — accessible by ADMIN, OFFICE_EXECUTIVE, SALES_OFFICER
+// Column Mapping:
+// - Code → users.user_login_name (or user_name if user_login_name doesn't exist)
+// - Order Date → dealer_orders.order_date (MAX for dealer summary, MIN for daily breakdown)
 router.get('/api/sales/reports/monthly', ensureSalesOfficer, async (req, res) => {
   try {
     const { year, month } = req.query;
@@ -356,9 +403,12 @@ router.get('/api/sales/reports/monthly', ensureSalesOfficer, async (req, res) =>
     const reportMonth = month ? parseInt(month) : now.getMonth() + 1;
 
     // Query 1: Dealer summary with status breakdown
+    // Maps: Code = first user.user_login_name for each dealer (by user_id ASC)
     const dealerSummary = await pool.query(`
       SELECT
-        d.dealer_id, d.dealer_name, u.user_login_name, d.dealer_monthly_target,
+        d.dealer_id, d.dealer_name,
+        (SELECT user_login_name FROM odts.users u WHERE u.dealer_id = d.dealer_id ORDER BY u.user_id LIMIT 1) AS user_login_name,
+        d.dealer_monthly_target,
         COUNT(DISTINCT o.order_id)::integer AS total_orders,
         COALESCE(SUM(oi.order_quantity), 0)::numeric AS total_qty,
         COUNT(DISTINCT CASE WHEN o.order_status = 'ORDER_PLACED'  THEN o.order_id END)::integer AS placed_count,
@@ -366,14 +416,15 @@ router.get('/api/sales/reports/monthly', ensureSalesOfficer, async (req, res) =>
         COUNT(DISTINCT CASE WHEN o.order_status = 'DISPATCHED'    THEN o.order_id END)::integer AS dispatched_count,
         COUNT(DISTINCT CASE WHEN o.order_status = 'ON_HOLD'       THEN o.order_id END)::integer AS on_hold_count
       FROM odts.dealers d
-      LEFT JOIN odts.users u ON u.dealer_id = d.dealer_id AND u.user_role_id = 2
       LEFT JOIN odts.dealer_orders o
         ON o.dealer_id = d.dealer_id
         AND DATE_TRUNC('month', o.order_date) = make_date($1, $2, 1)
       LEFT JOIN odts.dealer_order_items oi ON oi.order_id = o.order_id
-      GROUP BY d.dealer_id, d.dealer_name, u.user_login_name, d.dealer_monthly_target
+      GROUP BY d.dealer_id, d.dealer_name, d.dealer_monthly_target
       ORDER BY d.dealer_name
     `, [reportYear, reportMonth]);
+
+    console.log('DEBUG dealerSummary.rows[0]:', dealerSummary.rows[0]);
 
     // Query 2: Product breakdown per dealer
     const productBreakdown = await pool.query(`
@@ -390,6 +441,7 @@ router.get('/api/sales/reports/monthly', ensureSalesOfficer, async (req, res) =>
     `, [reportYear, reportMonth]);
 
     // Query 3: Daily breakdown per dealer
+    // Maps: Order Date=MIN(dealer_orders.order_date) with full timestamp
     const dailyBreakdown = await pool.query(`
       SELECT d.dealer_id, DATE(o.order_date) AS order_day, MIN(o.order_date) AS order_date,
         COUNT(DISTINCT o.order_id)::integer AS order_count,
@@ -535,11 +587,11 @@ router.get('/api/dealer/products', ensureDealer, async (req, res) => {
   }
 });
 
-// GET /api/admin/parties/:dealer_id — get parties for a specific dealer (admin-only)
+// GET /api/admin/parties/:dealer_id — get parties for a specific dealer (admin & office executive)
 router.get('/api/admin/parties/:dealer_id', ensureDealer, async (req, res) => {
   try {
     const role = req.session.user.role;
-    if (role !== 'ADMIN') return res.status(403).json({ error: 'Only admins can access this' });
+    if (role !== 'ADMIN' && role !== 'OFFICE_EXECUTIVE') return res.status(403).json({ error: 'Only admins and office executives can access this' });
 
     const dealerId = parseInt(req.params.dealer_id);
     const result = await pool.query(`
@@ -555,11 +607,11 @@ router.get('/api/admin/parties/:dealer_id', ensureDealer, async (req, res) => {
   }
 });
 
-// POST /api/admin/orders/on-behalf — admin create order for a dealer
+// POST /api/admin/orders/on-behalf — admin & office executive create order for a dealer
 router.post('/api/admin/orders/on-behalf', ensureDealer, async (req, res) => {
   try {
     const role = req.session.user.role;
-    if (role !== 'ADMIN') return res.status(403).json({ error: 'Only admins can create orders on behalf' });
+    if (role !== 'ADMIN' && role !== 'OFFICE_EXECUTIVE') return res.status(403).json({ error: 'Only admins and office executives can create orders on behalf' });
 
     const { items, dealer_id, party_id, load_type_code, preferred_location_code } = req.body;
 
@@ -847,6 +899,7 @@ router.patch('/api/dealer/orders/:id/status', ensureDealer, async (req, res) => 
 
     const updated = await pool.query(updateSQL, updateFields);
 
+    broadcastOrderUpdate({ orderId: parseInt(req.params.id), newStatus: status, updatedBy: req.session.user.id });
     res.json(toOrderShape({ ...updated.rows[0], dealer_name: req.session.user.username }));
   } catch (e) {
     console.error(e);

@@ -2,6 +2,7 @@ const express = require('express');
 const router = express.Router();
 const pool = require('../db');
 const { generatePresignedUploadUrl, uploadFileToS3 } = require('../services/s3Service');
+const { broadcastOrderUpdate } = require('../services/sseService');
 
 function ensureDispatcher(req, res, next) {
   if (!req.session?.user) return res.redirect('/signin');
@@ -98,6 +99,7 @@ router.post('/api/dispatcher/orders/:id/accept', ensureDispatcher, async (req, r
         WHERE order_id = $2`,
       [req.session.user.id, orderId]
     );
+    broadcastOrderUpdate({ orderId, newStatus: 'ACCEPTED', updatedBy: req.session.user.id });
     res.json({ success: true });
   } catch (e) {
     console.error('[Dispatcher] accept error:', e.message);
@@ -221,6 +223,7 @@ router.post('/api/dispatcher/orders/:id/dispatch', ensureDispatcher, async (req,
       [userId, orderId]
     );
 
+    broadcastOrderUpdate({ orderId, newStatus: 'DISPATCHED', updatedBy: userId });
     res.json({ success: true });
   } catch (e) {
     console.error('[Dispatcher] dispatch error:', e.message);

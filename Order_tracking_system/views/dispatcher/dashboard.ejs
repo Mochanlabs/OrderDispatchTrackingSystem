@@ -14,7 +14,7 @@
 <div id="app-root"></div>
 
 <script type="text/babel">
-const { useState, useEffect, useCallback } = React;
+const { useState, useEffect, useCallback, useRef } = React;
 
 const STATUS_CONFIG = {
   ORDER_PLACED: { text: 'Order Placed', icon: '🕐', bg: '#fd7e14', tc: '#fff' },
@@ -633,6 +633,9 @@ function App() {
   const [dispatchModal,   setDispatchModal]   = useState(null);
   const [loadingLocs,     setLoadingLocs]     = useState([]);
   const [toast,           setToast]           = useState(null);
+  const [refreshing,      setRefreshing]      = useState(false);
+  const esRef = useRef(null);
+  const retryRef = useRef(null);
 
   const notify = (msg, type = 'success') => setToast({ msg, type });
 
@@ -659,6 +662,25 @@ function App() {
       .then(d => setLoadingLocs(Array.isArray(d) ? d : []))
       .catch(() => {});
   }, []);
+
+  // SSE listener for real-time order status updates
+  useEffect(() => {
+    function connect() {
+      const es = new EventSource('/api/orders/events', { withCredentials: true });
+      esRef.current = es;
+      es.addEventListener('order-status-changed', () => {
+        setRefreshing(true);
+        fetchOrders().finally(() => setRefreshing(false));
+      });
+      es.onerror = () => {
+        es.close();
+        esRef.current = null;
+        retryRef.current = setTimeout(connect, 3000);
+      };
+    }
+    connect();
+    return () => { esRef.current?.close(); clearTimeout(retryRef.current); };
+  }, [fetchOrders]);
 
   const handleAccept = async (orderId) => {
     const r = await fetch(`/api/dispatcher/orders/${orderId}/accept`, { method: 'POST' });
@@ -700,6 +722,16 @@ function App() {
 
   return (
     <div>
+      {refreshing && (
+        <div style={{
+          position: 'fixed', top: 0, left: 0, right: 0, zIndex: 9999,
+          backgroundColor: '#0d6efd', color: '#fff',
+          textAlign: 'center', padding: '4px 0',
+          fontSize: '0.85rem', fontWeight: 500
+        }}>
+          Refreshing orders...
+        </div>
+      )}
       {toast && <Toast msg={toast.msg} type={toast.type} onClose={() => setToast(null)} />}
 
       {dispatchModal && (

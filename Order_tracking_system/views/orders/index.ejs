@@ -14,7 +14,7 @@
 <div id="app-root"></div>
 
 <script type="text/babel">
-const { useState, useEffect } = React;
+const { useState, useEffect, useRef } = React;
 const IS_ADMIN = window._IS_ADMIN === true;
 const CAN_VIEW_ALL = window._CAN_VIEW_ALL === true;
 const IS_ADMIN_OR_OFFICE = window._IS_ADMIN_OR_OFFICE === true;
@@ -444,13 +444,20 @@ function CreateForDealerModal({ onClose, onSaved }) {
     if (dealerId) {
       try {
         const r = await fetch(`/api/admin/parties/${dealerId}`, { credentials: 'include' });
+        if (!r.ok) {
+          const err = await r.json();
+          console.error('Failed to load parties:', err.error || err);
+          setParties([]);
+          return;
+        }
         const p = await r.json();
-        setParties(p);
+        setParties(Array.isArray(p) ? p : []);
         setPartyId('');
         setContactNumber('');
         setDeliveryAddress('');
       } catch (err) {
         console.error('Failed to load parties:', err);
+        setParties([]);
       }
     } else {
       setParties([]);
@@ -725,6 +732,10 @@ function App() {
     dispatch: true,
   });
 
+  const [refreshing, setRefreshing] = useState(false);
+  const esRef = useRef(null);
+  const retryRef = useRef(null);
+
   const toggleSort = (col) => {
     if (sortCol === col) {
       setSortDir(d => d === 'asc' ? 'desc' : 'asc');
@@ -783,6 +794,25 @@ function App() {
         .then(data => setDealerLimit(data))
         .catch(err => console.error('Failed to load limit:', err));
     }
+  }, []);
+
+  // SSE listener for real-time order status updates
+  useEffect(() => {
+    function connect() {
+      const es = new EventSource('/api/orders/events', { withCredentials: true });
+      esRef.current = es;
+      es.addEventListener('order-status-changed', () => {
+        setRefreshing(true);
+        load().finally(() => setRefreshing(false));
+      });
+      es.onerror = () => {
+        es.close();
+        esRef.current = null;
+        retryRef.current = setTimeout(connect, 3000);
+      };
+    }
+    connect();
+    return () => { esRef.current?.close(); clearTimeout(retryRef.current); };
   }, []);
 
   const applyDateFilter = () => {
@@ -892,6 +922,16 @@ function App() {
 
   return (
     <div>
+      {refreshing && (
+        <div style={{
+          position: 'fixed', top: 0, left: 0, right: 0, zIndex: 9999,
+          backgroundColor: '#0d6efd', color: '#fff',
+          textAlign: 'center', padding: '4px 0',
+          fontSize: '0.85rem', fontWeight: 500
+        }}>
+          Refreshing orders...
+        </div>
+      )}
       {toast.msg && (
         <div className={`alert alert-${toast.type} alert-dismissible mb-3`}>
           {toast.msg}
