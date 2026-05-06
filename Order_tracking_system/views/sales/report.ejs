@@ -127,6 +127,7 @@ function SalesReport() {
     const dailyData = daily.map(d => ({
       'Dealer ID': d.dealer_id,
       'Date': d.order_day,
+      'Order Date': d.order_date ? new Date(d.order_date).toLocaleString('en-IN') : d.order_day,
       'Orders': d.order_count,
       'Qty (MT)': parseFloat(d.total_qty).toFixed(2)
     }));

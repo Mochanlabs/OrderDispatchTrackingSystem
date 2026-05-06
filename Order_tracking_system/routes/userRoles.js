@@ -17,19 +17,6 @@ router.get('/master/user-roles', ensureAuth, (req, res) => {
   res.render('master/user_roles', { user: req.session.user });
 });
 
-// Underscore alias
-router.get('/master/user_roles', ensureAuth, (req, res) => {
-  if (req.session.user.role !== 'ADMIN') return res.status(403).send('Access denied. Admin only.');
-  res.render('master/user_roles', { user: req.session.user });
-});
-
-router.get('/api/user_roles', ensureAdmin, async (req, res) => {
-  try {
-    const r = await pool.query('SELECT * FROM odts.user_roles ORDER BY role_id');
-    res.json(r.rows);
-  } catch (e) { res.status(500).json({ error: e.message }); }
-});
-
 router.get('/api/user-roles', ensureAdmin, async (req, res) => {
   try {
     const r = await pool.query('SELECT * FROM odts.user_roles ORDER BY role_id');

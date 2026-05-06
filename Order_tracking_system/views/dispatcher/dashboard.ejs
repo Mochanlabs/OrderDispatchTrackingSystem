@@ -447,7 +447,7 @@ function DispatchModal({ order, loadingLocations, onSubmit, onClose }) {
                   <option value="">-- Select Actual Loading Location --</option>
                   {loadingLocations.map(l => (
                     <option key={l.code} value={l.code}>
-                      {l.code_label || l.code_desc || l.code}
+                      {l.code_desc || l.code}
                     </option>
                   ))}
                 </select>

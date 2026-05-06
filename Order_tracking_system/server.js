@@ -35,7 +35,6 @@ const { initializeS3 } = require('./services/s3Service');
     const auditRoutes = require('./routes/audit');
     const codeReferenceRoutes = require('./routes/codeReference');
     const dispatcherRoutes = require('./routes/dispatcher');
-    const pool = require('./db');
 
     const app = express();
 
@@ -86,29 +85,14 @@ const { initializeS3 } = require('./services/s3Service');
     app.use('/', codeReferenceRoutes);
     app.use('/', dispatcherRoutes);
 
-    app.get('/users', async (req, res) => {
-      try {
-        let result;
-        try {
-          result = await pool.query('SELECT * FROM odts.users');
-        } catch (e) {
-          result = await pool.query('SELECT * FROM users');
-        }
-        res.json(result.rows);
-      } catch (err) {
-        console.error(err);
-        res.status(500).send('Error fetching users');
-      }
+    app.get('/health', (req, res) => {
+      res.status(200).send('OK');
     });
 
     const PORT = process.env.PORT || 8080;
 
     app.listen(PORT, '0.0.0.0', () => {
       console.log(`Server running on port ${PORT}`);
-    });
-
-    app.get('/health', (req, res) => {
-      res.status(200).send('OK');
     });
 
   } catch (error) {

@@ -83,15 +83,6 @@ router.get('/master/users', ensureAuth, (req, res) => {
   res.render('master/users', { user: req.session.user });
 });
 
-// Alias: /api/users → /api/master/users
-router.get('/api/users', ensureAdmin, async (req, res) => {
-  try {
-    noStore(res);
-    const r = await fetchLoginUsersRows();
-    res.json(r.rows);
-  } catch (e) { res.status(500).json({ error: e.message }); }
-});
-
 router.get('/api/master/users', ensureAdmin, async (req, res) => {
   try {
     noStore(res);

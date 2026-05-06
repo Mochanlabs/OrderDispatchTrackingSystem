@@ -154,15 +154,6 @@ function App() {
     setHoldOrder(null);
   };
 
-  const groupedByDealer = orders.reduce((acc, o) => {
-    const dealerId = o.dealer_id;
-    if (!acc[dealerId]) {
-      acc[dealerId] = { dealer_name: o.dealer_name, orders: [] };
-    }
-    acc[dealerId].orders.push(o);
-    return acc;
-  }, {});
-
   const filtered = orders.filter(o => {
     const matchSearch = (o.product_name + ' ' + o.delivery_location + ' ' + o.order_id)
       .toLowerCase().includes(search.toLowerCase());

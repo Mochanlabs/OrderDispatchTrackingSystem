@@ -29,7 +29,7 @@
             </li>
             <% } %>
 
-            <% if (typeof user !== 'undefined' && user && (user.role === 'DEALER' || user.role === 'DISPATCHER')) { %>
+            <% if (typeof user !== 'undefined' && user && user.role === 'DEALER') { %>
             <li class="nav-item">
               <a class="nav-link" href="/tracking">📡 Live Tracking</a>
             </li>
@@ -53,6 +53,15 @@
             <% if (typeof user !== 'undefined' && user && user.role === 'OFFICE_EXECUTIVE') { %>
             <li class="nav-item">
               <a class="nav-link" href="/office/dashboard">📊 Office Dashboard</a>
+            </li>
+            <li class="nav-item">
+              <a class="nav-link" href="/master/products">📦 Products</a>
+            </li>
+            <li class="nav-item">
+              <a class="nav-link" href="/master/dealers">🏢 Dealers</a>
+            </li>
+            <li class="nav-item">
+              <a class="nav-link" href="/master/code-reference">📍 Locations</a>
             </li>
             <% } %>
 

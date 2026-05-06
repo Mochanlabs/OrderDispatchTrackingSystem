@@ -41,17 +41,25 @@ function ensureAdmin(req, res, next) {
   return next();
 }
 
+function ensureAdminOrOffice(req, res, next) {
+  if (!req.session?.user) return res.status(401).json({ error: 'Not authenticated' });
+  const role = req.session.user.role;
+  if (role !== 'ADMIN' && role !== 'OFFICE_EXECUTIVE') return res.status(403).json({ error: 'Access denied' });
+  return next();
+}
+
 function ensureAuth(req, res, next) {
   if (!req.session?.user) return res.redirect('/signin');
   return next();
 }
 
 router.get('/master/code-reference', ensureAuth, (req, res) => {
-  if (req.session.user.role !== 'ADMIN') return res.status(403).send('Access denied. Admin only.');
+  const role = req.session.user.role;
+  if (role !== 'ADMIN' && role !== 'OFFICE_EXECUTIVE') return res.status(403).send('Access denied.');
   res.render('master/code_reference', { user: req.session.user });
 });
 
-router.get('/api/code-reference/types', ensureAdmin, async (req, res) => {
+router.get('/api/code-reference/types', ensureAdminOrOffice, async (req, res) => {
   try {
     const r = await pool.query(
       `SELECT DISTINCT code_type FROM odts.code_reference ORDER BY code_type`
@@ -62,7 +70,7 @@ router.get('/api/code-reference/types', ensureAdmin, async (req, res) => {
   }
 });
 
-router.get('/api/code-reference', ensureAdmin, async (req, res) => {
+router.get('/api/code-reference', ensureAdminOrOffice, async (req, res) => {
   try {
     const { code_type } = req.query;
     const pk = await getPkColumn();

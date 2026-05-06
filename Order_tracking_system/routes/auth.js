@@ -134,11 +134,6 @@ async function markLogout({ sessionId = null, userId = null, auditId = null } = 
 }
 // ─────────────────────────────────────────────────────────────────────────────
 
-// Simple OTP generation for demo: store OTP in session. In production use secure storage and SMS gateway.
-function generateOtp() {
-  return Math.floor(100000 + Math.random() * 900000).toString();
-}
-
 async function hasTableColumn(tableName, columnName) {
   const result = await pool.query(
     `SELECT 1
@@ -211,13 +206,6 @@ async function renderSignup(req, res, { error = null, success = null, formData =
 function ensureAuthenticated(req, res, next) {
   if (req.session && req.session.user) return next();
   return res.redirect('/signin');
-}
-
-function requireRole(role) {
-  return (req, res, next) => {
-    if (req.session && req.session.user && req.session.user.role === role) return next();
-    return res.status(403).send('Forbidden');
-  };
 }
 
 function isAdminOrOfficeExecutiveRole(roleValue) {

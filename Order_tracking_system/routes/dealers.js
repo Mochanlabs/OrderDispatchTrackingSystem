@@ -26,36 +26,45 @@ function ensureAdmin(req, res, next) {
   if (req.session.user.role !== 'ADMIN') return res.status(403).json({ error: 'Admin access required' });
   return next();
 }
+function ensureAdminOrOffice(req, res, next) {
+  if (!req.session || !req.session.user) return res.status(401).json({ error: 'Not authenticated' });
+  const role = req.session.user.role;
+  if (role !== 'ADMIN' && role !== 'OFFICE_EXECUTIVE') return res.status(403).json({ error: 'Access denied' });
+  return next();
+}
 function ensureAuth(req, res, next) {
   if (!req.session || !req.session.user) return res.redirect('/signin');
   return next();
 }
 
 router.get('/master/dealers', ensureAuth, (req, res) => {
-  if (req.session.user.role !== 'ADMIN') return res.status(403).send('Access denied. Admin only.');
+  const role = req.session.user.role;
+  if (role !== 'ADMIN' && role !== 'OFFICE_EXECUTIVE') return res.status(403).send('Access denied.');
   res.render('master/dealers', { user: req.session.user });
 });
 
-router.get('/api/dealers', ensureAdmin, async (req, res) => {
+router.get('/api/dealers', ensureAdminOrOffice, async (req, res) => {
   try {
     const dealerCompanyCol = await getFirstExistingColumn('dealers', ['dealer_company_name', 'dealer_company']);
     const hasDealerEmail = await hasColumn('dealers', 'dealer_email');
     const hasLocationId = await hasColumn('dealers', 'location_id');
     const r = await pool.query(
-      `SELECT dealer_id,
-              dealer_name,
-              ${dealerCompanyCol ? `d.${dealerCompanyCol} AS dealer_company_name` : 'dealer_name AS dealer_company_name'},
-              dealer_code,
-              dealer_phone,
-              ${hasDealerEmail ? 'dealer_email' : 'NULL::varchar AS dealer_email'},
-              ${hasLocationId ? 'location_id' : 'NULL::int AS location_id'},
+      `SELECT DISTINCT ON (d.dealer_id) d.dealer_id,
+              COALESCE(u.user_login_name, '—') AS user_login_name,
+              d.dealer_name,
+              ${dealerCompanyCol ? `d.${dealerCompanyCol} AS dealer_company_name` : 'd.dealer_name AS dealer_company_name'},
+              d.dealer_code,
+              d.dealer_phone,
+              ${hasDealerEmail ? 'd.dealer_email' : 'NULL::varchar AS dealer_email'},
+              ${hasLocationId ? 'd.location_id' : 'NULL::int AS location_id'},
               ${hasLocationId ? 'l.location_name' : 'NULL::varchar AS location_name'},
-              dealer_address,
-              dealer_daily_limit, dealer_monthly_target,
-              dealer_is_active_flag, created_at, updated_at
+              d.dealer_address,
+              d.dealer_daily_limit, d.dealer_monthly_target,
+              d.dealer_is_active_flag, d.created_at, d.updated_at
        FROM odts.dealers d
+       LEFT JOIN odts.users u ON u.dealer_id = d.dealer_id
        ${hasLocationId ? 'LEFT JOIN odts.locations l ON l.location_id = d.location_id' : ''}
-       ORDER BY dealer_id`);
+       ORDER BY d.dealer_id, u.user_id`);
     res.json(r.rows);
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
@@ -119,7 +128,7 @@ router.post('/api/dealers', ensureAdmin, async (req, res) => {
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
 
-router.put('/api/dealers/:id', ensureAdmin, async (req, res) => {
+router.put('/api/dealers/:id', ensureAdminOrOffice, async (req, res) => {
   const { dealer_name, dealer_company_name, dealer_code, dealer_phone, dealer_email, location_id, dealer_address,
           dealer_is_active_flag, dealer_daily_limit, dealer_monthly_target } = req.body;
   if (!dealer_name) return res.status(400).json({ error: 'Dealer name required' });
@@ -166,7 +175,7 @@ router.put('/api/dealers/:id', ensureAdmin, async (req, res) => {
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
 
-router.post('/api/dealers/bulk-limits', ensureAdmin, async (req, res) => {
+router.post('/api/dealers/bulk-limits', ensureAdminOrOffice, async (req, res) => {
   const { updates } = req.body;
   if (!Array.isArray(updates) || updates.length === 0)
     return res.status(400).json({ error: 'No updates provided' });

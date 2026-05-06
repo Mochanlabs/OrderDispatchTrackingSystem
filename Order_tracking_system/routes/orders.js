@@ -4,10 +4,6 @@ const pool = require('../db');
 const { sendAlert } = require('../services/smsService');
 const { generatePresignedReadUrl } = require('../services/s3Service');
 
-function ensureAuth(req, res, next) {
-  if (!req.session || !req.session.user) return res.redirect('/signin');
-  return next();
-}
 function ensureDealer(req, res, next) {
   if (!req.session || !req.session.user) return res.redirect('/signin');
   const role = req.session.user.role;
@@ -256,10 +252,11 @@ router.get('/orders', ensureDealer, (req, res) => {
   const role = req.session.user.role;
   const isAdmin = role === 'ADMIN' || role === 'DISPATCHER';
   const canViewAllOrders = role === 'ADMIN' || role === 'DISPATCHER' || role === 'OFFICE_EXECUTIVE';
+  const isAdminOrOffice = role === 'ADMIN' || role === 'OFFICE_EXECUTIVE';
   if (!isAdmin && req.query.action === 'new') {
     return res.render('orders/new', { user: req.session.user });
   }
-  res.render('orders/index', { user: req.session.user, isAdmin, canViewAllOrders });
+  res.render('orders/index', { user: req.session.user, isAdmin, canViewAllOrders, isAdminOrOffice });
 });
 
 router.get('/office/dashboard', ensureAdminOrOfficeExecutive, (req, res) => {
@@ -394,7 +391,7 @@ router.get('/api/sales/reports/monthly', ensureSalesOfficer, async (req, res) =>
 
     // Query 3: Daily breakdown per dealer
     const dailyBreakdown = await pool.query(`
-      SELECT d.dealer_id, DATE(o.order_date) AS order_day,
+      SELECT d.dealer_id, DATE(o.order_date) AS order_day, MIN(o.order_date) AS order_date,
         COUNT(DISTINCT o.order_id)::integer AS order_count,
         COALESCE(SUM(oi.order_quantity), 0)::numeric AS total_qty
       FROM odts.dealer_orders o
@@ -782,11 +779,42 @@ router.patch('/api/dealer/orders/:id/status', ensureDealer, async (req, res) => 
     if (!allowed.includes(status))
       return res.status(400).json({ error: `Cannot move order from "${order.order_status}" to "${status}".` });
 
-    // Role-based reason validation: mandatory for ADMIN/DISPATCHER/OFFICE_EXECUTIVE, optional for DEALER
+    // ── ON_HOLD PERMISSION LOGIC ──
+    // Dealer: can unhold only orders they held
+    // Admin/Office: can unhold orders held by Admin or Office (NOT Dealer); they can work on each other's behalf
+    // Dispatcher: CANNOT unhold
+    if (status === 'ORDER_PLACED' && order.order_status === 'ON_HOLD') {
+      const heldByRole = order.on_hold_by_role;
+
+      // Dispatcher cannot unhold any orders
+      if (role === 'DISPATCHER') {
+        return res.status(403).json({ error: 'Dispatcher cannot unhold orders.' });
+      }
+
+      // Dealer can only unhold orders they held
+      if (role === 'DEALER') {
+        if (heldByRole && heldByRole !== 'DEALER') {
+          return res.status(403).json({
+            error: `Cannot unhold. This order is held by ${heldByRole}. Only ${heldByRole} can unhold it.`
+          });
+        }
+      }
+      // Admin and Office can unhold orders held by Admin or Office (but NOT by Dealer)
+      else if (['ADMIN', 'OFFICE_EXECUTIVE'].includes(role)) {
+        if (heldByRole === 'DEALER') {
+          return res.status(403).json({
+            error: `Cannot unhold. This order is held by dealer. Only the dealer can unhold their own orders.`
+          });
+        }
+        // If heldByRole is Admin, Office, or NULL (backward compatibility), allow Admin/Office to unhold
+      }
+    }
+
+    // Role-based reason validation: mandatory for ADMIN/OFFICE_EXECUTIVE, optional for DEALER
     if (status === 'ON_HOLD') {
-      const isAdminRole = ['ADMIN', 'DISPATCHER', 'OFFICE_EXECUTIVE'].includes(role);
+      const isAdminRole = ['ADMIN', 'OFFICE_EXECUTIVE'].includes(role);
       if (isAdminRole && !reason?.trim()) {
-        return res.status(400).json({ error: 'Hold reason is required for admin/dispatcher' });
+        return res.status(400).json({ error: 'Hold reason is required for admin/office' });
       }
     }
 
