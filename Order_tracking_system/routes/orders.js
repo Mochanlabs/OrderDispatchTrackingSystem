@@ -467,6 +467,31 @@ router.get('/api/sales/reports/monthly', ensureSalesOfficer, async (req, res) =>
   }
 });
 
+// GET /api/sales/reports/annual — 12-month trend data
+router.get('/api/sales/reports/annual', ensureSalesOfficer, async (req, res) => {
+  try {
+    const year = req.query.year ? parseInt(req.query.year) : new Date().getFullYear();
+
+    const result = await pool.query(`
+      SELECT
+        EXTRACT(MONTH FROM o.order_date)::integer AS month,
+        TO_CHAR(o.order_date, 'MMM') AS month_name,
+        COALESCE(SUM(oi.order_quantity), 0)::numeric AS total_qty,
+        COUNT(DISTINCT o.order_id)::integer AS total_orders
+      FROM odts.dealer_orders o
+      LEFT JOIN odts.dealer_order_items oi ON oi.order_id = o.order_id
+      WHERE EXTRACT(YEAR FROM o.order_date) = $1
+      GROUP BY EXTRACT(MONTH FROM o.order_date), TO_CHAR(o.order_date, 'MMM')
+      ORDER BY EXTRACT(MONTH FROM o.order_date)
+    `, [year]);
+
+    res.json({ months: result.rows, year });
+  } catch (e) {
+    console.error(e);
+    res.status(500).json({ error: 'Server error' });
+  }
+});
+
 router.get('/api/dealer/orders/by-driver/:phone', ensureDealer, async (req, res) => {
   try {
     const phone = String(req.params.phone || '').trim();
