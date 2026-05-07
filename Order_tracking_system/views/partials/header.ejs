@@ -103,6 +103,29 @@
 
           <!-- Right: user info -->
           <ul class="navbar-nav ms-auto user-pill">
+            <% if (typeof user !== 'undefined' && user && (user.role === 'ADMIN' || user.role === 'OFFICE_EXECUTIVE')) { %>
+            <li class="nav-item me-1 d-flex align-items-center dropdown">
+              <button id="notif-btn" class="btn position-relative p-2"
+                style="background:none; border:none; color:inherit;"
+                data-bs-toggle="dropdown" data-bs-auto-close="true" aria-expanded="false"
+                title="Quota Alerts">
+                🔔
+                <span id="notif-badge"
+                  class="position-absolute top-0 start-100 translate-middle badge rounded-pill bg-danger"
+                  style="display:none; font-size:0.65rem;"></span>
+              </button>
+              <div class="dropdown-menu dropdown-menu-end p-0 shadow"
+                style="min-width:320px; max-width:360px;">
+                <div class="d-flex align-items-center justify-content-between px-3 py-2 border-bottom bg-light rounded-top">
+                  <span class="fw-semibold small">⚠️ Monthly Quota Alerts</span>
+                  <span id="notif-month" class="text-muted" style="font-size:0.75rem;"></span>
+                </div>
+                <div id="notif-list" style="max-height:360px; overflow-y:auto;">
+                  <div class="text-center text-muted py-3 small">Loading…</div>
+                </div>
+              </div>
+            </li>
+            <% } %>
             <% if (typeof user !== 'undefined' && user) { %>
               <li class="nav-item dropdown">
                 <a class="nav-link dropdown-toggle" href="#" data-bs-toggle="dropdown" aria-expanded="false">

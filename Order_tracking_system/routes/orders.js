@@ -492,6 +492,44 @@ router.get('/api/sales/reports/annual', ensureSalesOfficer, async (req, res) => 
   }
 });
 
+// GET /api/admin/notifications/quota-alerts — dealers at ≥80% of monthly target
+router.get('/api/admin/notifications/quota-alerts', ensureAdminOrOfficeExecutive, async (req, res) => {
+  try {
+    const now = new Date();
+    const year = now.getFullYear();
+    const month = now.getMonth() + 1;
+
+    const result = await pool.query(`
+      SELECT
+        d.dealer_id,
+        d.dealer_name,
+        d.dealer_monthly_target,
+        COALESCE(SUM(oi.order_quantity), 0)::numeric AS used_qty,
+        CASE WHEN d.dealer_monthly_target > 0
+          THEN ROUND((COALESCE(SUM(oi.order_quantity), 0) / d.dealer_monthly_target) * 100, 1)
+          ELSE 0
+        END AS percentage
+      FROM odts.dealers d
+      LEFT JOIN odts.dealer_orders o
+        ON o.dealer_id = d.dealer_id
+        AND DATE_TRUNC('month', o.order_date) = make_date($1, $2, 1)
+        AND o.order_status IN ('ORDER_PLACED', 'ACCEPTED', 'DISPATCHED')
+      LEFT JOIN odts.dealer_order_items oi ON oi.order_id = o.order_id
+      WHERE d.dealer_monthly_target > 0
+      GROUP BY d.dealer_id, d.dealer_name, d.dealer_monthly_target
+      HAVING CASE WHEN d.dealer_monthly_target > 0
+        THEN (COALESCE(SUM(oi.order_quantity), 0) / d.dealer_monthly_target) * 100
+        ELSE 0 END >= 80
+      ORDER BY percentage DESC
+    `, [year, month]);
+
+    res.json({ alerts: result.rows, month, year });
+  } catch (e) {
+    console.error(e);
+    res.status(500).json({ error: 'Server error' });
+  }
+});
+
 router.get('/api/dealer/orders/by-driver/:phone', ensureDealer, async (req, res) => {
   try {
     const phone = String(req.params.phone || '').trim();

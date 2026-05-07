@@ -8,5 +8,79 @@
     </footer>
 
     <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/js/bootstrap.bundle.min.js"></script>
+    <% if (typeof user !== 'undefined' && user && (user.role === 'ADMIN' || user.role === 'OFFICE_EXECUTIVE')) { %>
+    <script>
+    (function () {
+      var esRef = null;
+      var retryRef = null;
+
+      function loadQuotaAlerts() {
+        fetch('/api/admin/notifications/quota-alerts', { credentials: 'include' })
+          .then(function(r) { return r.ok ? r.json() : Promise.reject(); })
+          .then(function(data) {
+            var alerts  = data.alerts || [];
+            var badge   = document.getElementById('notif-badge');
+            var list    = document.getElementById('notif-list');
+            var monthEl = document.getElementById('notif-month');
+            var monthNames = ['Jan','Feb','Mar','Apr','May','Jun',
+                              'Jul','Aug','Sep','Oct','Nov','Dec'];
+            if (monthEl) monthEl.textContent = monthNames[data.month - 1] + ' ' + data.year;
+
+            if (badge) {
+              badge.textContent = alerts.length;
+              badge.style.display = alerts.length > 0 ? '' : 'none';
+            }
+
+            if (!list) return;
+            if (alerts.length === 0) {
+              list.innerHTML = '<div class="text-center text-muted py-4 small">✅ No dealers at 80%+ quota this month</div>';
+              return;
+            }
+            list.innerHTML = alerts.map(function(a) {
+              var pct   = parseFloat(a.percentage);
+              var color = pct >= 100 ? '#dc3545' : pct >= 90 ? '#fd7e14' : '#ffc107';
+              var textColor = pct >= 80 && pct < 90 ? '#000' : '#fff';
+              return '<div class="px-3 py-2 border-bottom d-flex align-items-center justify-content-between" style="font-size:0.82rem;">'
+                + '<div>'
+                + '<div class="fw-semibold">' + a.dealer_name + '</div>'
+                + '<div class="text-muted" style="font-size:0.75rem;">'
+                + parseFloat(a.used_qty).toFixed(2) + ' / ' + a.dealer_monthly_target + ' MT'
+                + '</div></div>'
+                + '<span class="badge rounded-pill ms-2 fw-bold" style="background:' + color + '; color:' + textColor + '; min-width:46px; text-align:center;">'
+                + pct + '%</span>'
+                + '</div>';
+            }).join('');
+          })
+          .catch(function() {
+            var list = document.getElementById('notif-list');
+            if (list) list.innerHTML = '<div class="text-center text-muted py-3 small">Failed to load alerts</div>';
+          });
+      }
+
+      function connectSSE() {
+        var es = new EventSource('/api/orders/events', { withCredentials: true });
+        esRef = es;
+        es.addEventListener('order-status-changed', function() {
+          loadQuotaAlerts();
+        });
+        es.onerror = function() {
+          es.close();
+          esRef = null;
+          retryRef = setTimeout(connectSSE, 3000);
+        };
+      }
+
+      document.addEventListener('DOMContentLoaded', function() {
+        loadQuotaAlerts();
+        connectSSE();
+      });
+
+      window.addEventListener('beforeunload', function() {
+        if (esRef) esRef.close();
+        if (retryRef) clearTimeout(retryRef);
+      });
+    })();
+    </script>
+    <% } %>
   </body>
 </html>

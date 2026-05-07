@@ -378,7 +378,8 @@
       const totalQty = items.reduce((sum, item) => sum + item.order_quantity, 0);
       if (dealerLimit && dealerLimit.daily_limit > 0) {
         if (totalQty > dealerLimit.remaining) {
-          throw new Error(`Order quantity (${totalQty.toFixed(3)} MT) exceeds remaining daily limit (${dealerLimit.remaining.toFixed(3)} MT). ${dealerLimit.percentage.toFixed(0)}% of limit already used.`);
+          const contactMsg = dealerLimit.admin_phone ? ` Call Admin: ${dealerLimit.admin_phone}` : '';
+          throw new Error(`Order quantity (${totalQty.toFixed(3)} MT) exceeds remaining daily limit (${dealerLimit.remaining.toFixed(3)} MT). ${dealerLimit.percentage.toFixed(0)}% of limit already used. Contact Admin to increase your limit.${contactMsg}`);
         }
         if (totalQty >= dealerLimit.remaining * 0.8) {
           const proceed = confirm(`⚠️ Warning: This order will use ${(totalQty / dealerLimit.daily_limit * 100).toFixed(0)}% of your daily limit. Continue?`);
