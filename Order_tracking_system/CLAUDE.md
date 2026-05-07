@@ -111,6 +111,7 @@ Every route that queries the DB first checks `information_schema.columns` for op
 - `req.session.user` holds `{ id, username, user_login_name, email, role, dealer_id }`
 - Global middleware redirects unauthenticated GETs to `/signin` (except `/`, `/signin`, `/health`)
 - API routes (`/api/*`) skip the redirect — callers get a 401/403 JSON response
+- **Auto-logout on inactivity**: Session expires after `SESSION_TIMEOUT_HOURS` (default 8 hours) of inactivity. The timeout resets on each user request.
 
 ### Account lockout
 After 5 consecutive failed password attempts (tracked in session + global Map + `user_login_audit`), `user_is_locked_flag` is set to TRUE. Admin must unlock manually.
@@ -132,6 +133,7 @@ DATABASE_URL — AWS RDS connection string (takes priority over fields above)
 DB_SSL_REJECT_UNAUTHORIZED
 DB_POOL_MAX / DB_IDLE_TIMEOUT_MS / DB_CONNECTION_TIMEOUT_MS
 SESSION_SECRET
+SESSION_TIMEOUT_HOURS=8 — auto-logout after N hours of inactivity
 FIREBASE_API_KEY / FIREBASE_AUTH_DOMAIN / FIREBASE_DATABASE_URL / FIREBASE_PROJECT_ID ...
 GOOGLE_MAPS_API_KEY
 FIREBASE_TRACKING_PATH_PREFIX (default: driver_locations)

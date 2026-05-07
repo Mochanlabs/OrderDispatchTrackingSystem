@@ -113,8 +113,14 @@ function toOrderShape(row) {
 // Generate presigned URLs for receipt images
 async function addPresignedUrlsToOrders(orders) {
   try {
+    console.log(`[Orders] Processing ${orders.length} orders for presigned URLs`);
     for (const order of orders) {
-      if (order.dispatch && order.dispatch.image_url && !order.dispatch.image_url.includes('?')) {
+      if (order.dispatch && order.dispatch.image_url) {
+        console.log(`[Orders] Order ${order.order_id}: image_url = ${order.dispatch.image_url}`);
+        if (order.dispatch.image_url.includes('?')) {
+          console.log(`[Orders] Order ${order.order_id}: Already presigned (has ?), skipping`);
+          continue;
+        }
         // Extract S3 key from URL (e.g., "https://bucket.s3.region.amazonaws.com/receipts/2026/05/05/4/O9_timestamp.jpg" → "receipts/2026/05/05/4/O9_timestamp.jpg")
         const receiptIndex = order.dispatch.image_url.indexOf('/receipts/');
         let s3Key = null;
@@ -124,15 +130,21 @@ async function addPresignedUrlsToOrders(orders) {
 
         if (s3Key) {
           try {
-            console.log(`[Orders] Generating presigned URL for: ${s3Key}`);
+            console.log(`[Orders] Generating presigned URL for order ${order.order_id}: ${s3Key}`);
             const presignedUrl = await generatePresignedReadUrl(s3Key);
             order.dispatch.image_url = presignedUrl;
-            console.log(`[Orders] Presigned URL generated successfully`);
+            console.log(`[Orders] Order ${order.order_id}: Presigned URL generated successfully`);
           } catch (err) {
-            console.error(`[Orders] Failed to generate presigned URL for ${s3Key}:`, err.message);
+            console.error(`[Orders] Order ${order.order_id}: Failed to generate presigned URL for ${s3Key}:`, err.message);
+            console.error(`[Orders] Error code:`, err.code);
+            console.error(`[Orders] Full error:`, err);
             // Keep original URL if presigned URL generation fails
           }
+        } else {
+          console.log(`[Orders] Order ${order.order_id}: Could not extract S3 key from ${order.dispatch.image_url}`);
         }
+      } else {
+        console.log(`[Orders] Order ${order.order_id}: No dispatch/image_url`);
       }
     }
   } catch (err) {

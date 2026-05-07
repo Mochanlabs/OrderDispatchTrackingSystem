@@ -105,11 +105,12 @@
           <ul class="navbar-nav ms-auto user-pill">
             <% if (typeof user !== 'undefined' && user) { %>
               <li class="nav-item dropdown">
-                <a class="nav-link dropdown-toggle" href="#" data-bs-toggle="dropdown" aria-expanded="false">
+                <a class="nav-link dropdown-toggle" href="#" data-bs-toggle="dropdown" aria-expanded="false" title="Session timeout: <%= sessionTimeoutHours %>h">
                   👤 <%= user.user_login_name || user.username %> &nbsp;<span class="badge-role"><%= user.role %></span>
                 </a>
                 <ul class="dropdown-menu dropdown-menu-end shadow">
                   <li><span class="dropdown-item-text text-muted small"><%= user.user_login_name || user.username %></span></li>
+                  <li><span class="dropdown-item-text text-muted small">⏱️ Auto logout after <%= sessionTimeoutHours %> hours of inactivity</span></li>
                   <li><hr class="dropdown-divider my-1"></li>
                   <li><a class="dropdown-item text-danger fw-600" href="/logout">🚪 Sign out</a></li>
                 </ul>

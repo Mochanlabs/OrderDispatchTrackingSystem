@@ -159,8 +159,19 @@ function DispatchModal({ order, loadingLocations, onSubmit, onClose }) {
       });
 
       if (!uploadRes.ok) {
-        const errorData = await uploadRes.json();
-        throw new Error(`Failed to upload: ${errorData.error || 'Unknown error'}`);
+        const contentType = uploadRes.headers.get('content-type');
+        let errorMsg = 'Unknown error';
+        if (contentType && contentType.includes('application/json')) {
+          try {
+            const errorData = await uploadRes.json();
+            errorMsg = errorData.error || 'Unknown error';
+          } catch (e) {
+            errorMsg = `Server error (${uploadRes.status}): Invalid response`;
+          }
+        } else {
+          errorMsg = `Server error (${uploadRes.status}): Check server logs`;
+        }
+        throw new Error(`Failed to upload: ${errorMsg}`);
       }
 
       const uploadResult = await uploadRes.json();
