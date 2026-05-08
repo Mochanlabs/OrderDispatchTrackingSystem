@@ -252,7 +252,8 @@ function App(){
           dealer_phone:dealer?.dealer_phone||'',
           dealer_email:dealer?.dealer_email||'',
           dealer_is_active_flag:dealer?.dealer_is_active_flag,
-          ...updatePayload
+          dealer_daily_limit:inlineEdit.field==='dealer_daily_limit'?parseFloat(inlineEditValue)||0:dealer?.dealer_daily_limit||0,
+          dealer_monthly_target:inlineEdit.field==='dealer_monthly_target'?parseFloat(inlineEditValue)||0:dealer?.dealer_monthly_target||0
         })
       });
       const d=await res.json();
@@ -264,6 +265,7 @@ function App(){
   };
 
   const cancelInlineEdit=()=>{setInlineEdit(null);setInlineEditValue('');};
+  const [skipBlur,setSkipBlur]=useState(false);
 
   const sort=(col)=>{if(sortCol===col)setSortAsc(!sortAsc);else{setSortCol(col);setSortAsc(true);}};
   const SI=({col})=>sortCol===col?<span className="ms-1">{sortAsc?'↑':'↓'}</span>:<span className="text-muted ms-1">⇅</span>;
@@ -318,7 +320,7 @@ function App(){
                 <td className="text-end" onClick={()=>startInlineEdit(r.dealer_id,'dealer_daily_limit',r.dealer_daily_limit||0)} style={{cursor:'pointer',padding:'0.5rem'}}>
                   {inlineEdit?.dealerId===r.dealer_id && inlineEdit?.field==='dealer_daily_limit'
                     ?<div className="d-flex align-items-center gap-1">
-                      <input type="number" min="0" step="0.01" className="form-control form-control-sm" style={{width:'80px'}} value={inlineEditValue} onChange={e=>setInlineEditValue(e.target.value)} autoFocus onKeyDown={async(e)=>{if(e.key==='Enter'){saveInlineEdit();e.preventDefault();}else if(e.key==='Escape'){cancelInlineEdit();e.preventDefault();}else if(e.key==='Tab'){e.preventDefault();await saveInlineEdit();setTimeout(()=>{setInlineEdit({dealerId:r.dealer_id,field:'dealer_monthly_target'});setInlineEditValue((r.dealer_monthly_target||0).toString());},0);}}} onBlur={saveInlineEdit}/>
+                      <input type="number" min="0" step="0.01" className="form-control form-control-sm" style={{width:'80px'}} value={inlineEditValue} onChange={e=>setInlineEditValue(e.target.value)} autoFocus onKeyDown={async(e)=>{if(e.key==='Enter'){saveInlineEdit();e.preventDefault();}else if(e.key==='Escape'){cancelInlineEdit();e.preventDefault();}else if(e.key==='Tab'){e.preventDefault();setSkipBlur(true);await saveInlineEdit();setTimeout(()=>{setInlineEdit({dealerId:r.dealer_id,field:'dealer_monthly_target'});setInlineEditValue((r.dealer_monthly_target||0).toString());setSkipBlur(false);},0);}}} onBlur={()=>{if(!skipBlur) saveInlineEdit();}}/>
                       {inlineEditSaving&&<span className="spinner-border spinner-border-sm ms-1"></span>}
                     </div>
                     :<div style={{minWidth:'60px'}}>{r.dealer_daily_limit!=null?Number(r.dealer_daily_limit).toLocaleString():<span className="text-muted">—</span>} <span className="text-muted small">✎</span></div>
