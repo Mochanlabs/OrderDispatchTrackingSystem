@@ -1,0 +1,50 @@
+# ====================================
+# Local Development Configuration
+# ====================================
+
+# Application
+PORT=3000
+LOCAL_DEV=true
+
+# Database (PostgreSQL)
+DB_HOST=localhost
+DB_PORT=5432
+DB_USER=postgres
+DB_PASSWORD=your_password
+DB_NAME=odts
+DB_SSL=false
+DB_SSL_REJECT_UNAUTHORIZED=false
+DB_POOL_MAX=20
+DB_IDLE_TIMEOUT_MS=30000
+DB_CONNECTION_TIMEOUT_MS=2000
+
+# Session
+SESSION_SECRET=your_session_secret_change_in_production
+
+# Firebase (for live tracking)
+FIREBASE_API_KEY=your_firebase_api_key
+FIREBASE_AUTH_DOMAIN=your_firebase_auth_domain
+FIREBASE_DATABASE_URL=your_firebase_database_url
+FIREBASE_PROJECT_ID=your_firebase_project_id
+FIREBASE_STORAGE_BUCKET=your_firebase_storage_bucket
+FIREBASE_MESSAGING_SENDER_ID=your_firebase_messaging_sender_id
+FIREBASE_APP_ID=your_firebase_app_id
+FIREBASE_TRACKING_PATH_PREFIX=driver_locations
+
+# Google Maps
+GOOGLE_MAPS_API_KEY=your_google_maps_api_key
+
+# SMS Service (dev | msg91 | twilio)
+SMS_PROVIDER=dev
+MSG91_AUTH_KEY=your_msg91_auth_key
+MSG91_TEMPLATE_ID=your_msg91_template_id
+MSG91_SENDER_ID=your_msg91_sender_id
+TWILIO_ACCOUNT_SID=your_twilio_account_sid
+TWILIO_AUTH_TOKEN=your_twilio_auth_token
+TWILIO_FROM_NUMBER=your_twilio_from_number
+
+# AWS S3 (for receipt uploads)
+AWS_S3_BUCKET_NAME=odts-dev-s3-receipt
+AWS_REGION=ap-south-1
+AWS_S3_ACCESS_KEY_ID=your_aws_access_key_id
+AWS_S3_SECRET_ACCESS_KEY=your_aws_secret_access_key
