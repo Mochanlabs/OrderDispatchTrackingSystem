@@ -25,9 +25,15 @@ async function getFirstExistingColumn(tableName, candidates) {
 }
 
 function ensureDealer(req, res, next) {
-  if (!req.session || !req.session.user) return res.redirect('/signin');
+  if (!req.session || !req.session.user) {
+    const isApiRoute = req.path.startsWith('/api/');
+    return isApiRoute ? res.status(401).json({ error: 'Unauthorized' }) : res.redirect('/signin');
+  }
   const role = req.session.user.role;
-  if (role !== 'DEALER' && role !== 'ADMIN' && role !== 'DISPATCHER' && role !== 'OFFICE_EXECUTIVE') return res.status(403).send('Access denied.');
+  if (role !== 'DEALER' && role !== 'ADMIN' && role !== 'DISPATCHER' && role !== 'OFFICE_EXECUTIVE') {
+    const isApiRoute = req.path.startsWith('/api/');
+    return isApiRoute ? res.status(403).json({ error: 'Access denied' }) : res.status(403).send('Access denied.');
+  }
   return next();
 }
 

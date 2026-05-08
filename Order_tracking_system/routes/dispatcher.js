@@ -5,9 +5,15 @@ const { generatePresignedUploadUrl, uploadFileToS3, generatePresignedReadUrl } =
 const { broadcastOrderUpdate } = require('../services/sseService');
 
 function ensureDispatcher(req, res, next) {
-  if (!req.session?.user) return res.redirect('/signin');
+  if (!req.session?.user) {
+    const isApiRoute = req.path.startsWith('/api/');
+    return isApiRoute ? res.status(401).json({ error: 'Unauthorized' }) : res.redirect('/signin');
+  }
   const role = req.session.user.role;
-  if (role !== 'DISPATCHER' && role !== 'ADMIN') return res.status(403).send('Access denied. Dispatcher or Admin only.');
+  if (role !== 'DISPATCHER' && role !== 'ADMIN') {
+    const isApiRoute = req.path.startsWith('/api/');
+    return isApiRoute ? res.status(403).json({ error: 'Access denied. Dispatcher or Admin only.' }) : res.status(403).send('Access denied. Dispatcher or Admin only.');
+  }
   return next();
 }
 
