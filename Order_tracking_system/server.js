@@ -41,6 +41,16 @@ const { initializeS3 } = require('./services/s3Service');
     app.set('view engine', 'ejs');
     app.set('views', path.join(__dirname, 'views'));
 
+    // Pre-middleware logging for request size debugging
+    app.use((req, _res, next) => {
+      const contentLength = req.get('content-length');
+      if (contentLength && req.method !== 'GET') {
+        const sizeMB = (parseInt(contentLength) / (1024 * 1024)).toFixed(2);
+        console.log(`[${new Date().toISOString()}] ${req.method} ${req.path} - Content-Length: ${sizeMB} MB`);
+      }
+      next();
+    });
+
     app.use(express.urlencoded({ extended: true, limit: '100mb' }));
     app.use(express.json({ limit: '100mb' }));
     app.use(express.static(path.join(__dirname, 'public')));

@@ -110,18 +110,19 @@ function DispatchModal({ order, loadingLocations, onSubmit, onClose }) {
       let fileToUpload = selectedFile;
       let compressedSize = null;
 
-      // Compress if file > 1MB (if ImageCompression library is available)
-      if (selectedFile.size > 1024 * 1024 && typeof window.ImageCompression !== 'undefined') {
+      // Compress if file > 500KB (account for base64 expansion ~33%)
+      // With base64 encoding, 500KB becomes ~667KB, plus JSON overhead
+      if (selectedFile.size > 500 * 1024 && typeof window.ImageCompression !== 'undefined') {
         setUploadProgress(10);
         try {
           const options = {
-            maxSizeMB: 1,
+            maxSizeMB: 0.5, // Compress to max 500KB to stay under 1MB when base64 encoded
             maxWidthOrHeight: 1920,
             useWebWorker: true,
           };
           fileToUpload = await window.ImageCompression.compress(selectedFile, options);
           compressedSize = fileToUpload.size;
-          console.log(`Compressed image: ${selectedFile.size} → ${fileToUpload.size} bytes`);
+          console.log(`Compressed image: ${selectedFile.size} → ${fileToUpload.size} bytes (base64 will be ~${Math.ceil(fileToUpload.size * 1.33)} bytes)`);
         } catch (compressError) {
           console.warn('Image compression failed, using original:', compressError.message);
           // Continue with original file if compression fails
@@ -330,7 +331,7 @@ function DispatchModal({ order, loadingLocations, onSubmit, onClose }) {
                       disabled={uploading}
                       className="form-control"
                     />
-                    <small className="text-muted d-block mt-1">Accepted: JPG, PNG, GIF, WebP. Max 1 MB after compression.</small>
+                    <small className="text-muted d-block mt-1">Accepted: JPG, PNG, GIF, WebP. Auto-compressed to ~500 KB if larger.</small>
                   </div>
 
                   {imagePreview && (

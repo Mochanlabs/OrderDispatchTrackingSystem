@@ -146,6 +146,10 @@ router.post('/api/dispatcher/upload-receipt', ensureDispatcher, async (req, res)
   try {
     const { order_id, dealer_id, file_name, file_type, file_data } = req.body;
 
+    // Log the size of the base64 string in the request body
+    const base64SizeMB = file_data ? (file_data.length / (1024 * 1024)).toFixed(2) : '0';
+    console.log(`[Dispatcher] Upload request: Content-Length=${req.get('content-length')} bytes, base64_size=${base64SizeMB} MB`);
+
     if (!order_id || !dealer_id || !file_name || !file_type || !file_data) {
       const missing = [];
       if (!order_id) missing.push('order_id');
@@ -166,7 +170,8 @@ router.post('/api/dispatcher/upload-receipt', ensureDispatcher, async (req, res)
       return res.status(400).json({ error: 'Invalid base64 data' });
     }
 
-    console.log(`[Dispatcher] Receipt upload request: order=${order_id}, dealer=${dealer_id}, file=${file_name}, size=${fileBuffer.length} bytes`);
+    const fileSizeMB = (fileBuffer.length / (1024 * 1024)).toFixed(2);
+    console.log(`[Dispatcher] Receipt upload: order=${order_id}, dealer=${dealer_id}, file=${file_name}, decompressed_size=${fileSizeMB} MB`);
     const uploadResult = await uploadFileToS3(dealer_id, order_id, fileBuffer, file_name, file_type);
     res.json({
       success: true,
