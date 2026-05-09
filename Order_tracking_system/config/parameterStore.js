@@ -35,6 +35,7 @@ async function loadParameters() {
       `/odts/${paramEnv}/DB_SSL`,
       `/odts/${paramEnv}/DB_SSL_REJECT_UNAUTHORIZED`,
       `/odts/${paramEnv}/SESSION_SECRET`,
+      `/odts/${paramEnv}/SESSION_TIMEOUT_HOURS`,
       `/odts/${paramEnv}/PORT`,
       `/odts/${paramEnv}/S3_BUCKET`,
       `/odts/${paramEnv}/FIREBASE_API_KEY`,

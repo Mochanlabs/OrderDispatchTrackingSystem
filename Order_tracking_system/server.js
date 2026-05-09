@@ -41,19 +41,35 @@ const { initializeS3 } = require('./services/s3Service');
     app.set('view engine', 'ejs');
     app.set('views', path.join(__dirname, 'views'));
 
-    app.use(express.urlencoded({ extended: true, limit: '50mb' }));
-    app.use(express.json({ limit: '50mb' }));
+    // Pre-middleware logging for request size debugging
+    app.use((req, _res, next) => {
+      const contentLength = req.get('content-length');
+      if (contentLength && req.method !== 'GET') {
+        const sizeMB = (parseInt(contentLength) / (1024 * 1024)).toFixed(2);
+        console.log(`[${new Date().toISOString()}] ${req.method} ${req.path} - Content-Length: ${sizeMB} MB`);
+      }
+      next();
+    });
+
+    app.use(express.urlencoded({ extended: true, limit: '100mb' }));
+    app.use(express.json({ limit: '100mb' }));
     app.use(express.static(path.join(__dirname, 'public')));
+
+    // Session timeout in hours (default: 8 hours)
+    const SESSION_TIMEOUT_HOURS = parseInt(process.env.SESSION_TIMEOUT_HOURS || '8', 10);
+    const SESSION_TIMEOUT_MS = SESSION_TIMEOUT_HOURS * 60 * 60 * 1000;
 
     app.use(session({
       secret: process.env.SESSION_SECRET || 'change_this_secret_in_dev',
       resave: false,
       saveUninitialized: false,
-      cookie: { maxAge: 24 * 60 * 60 * 1000 }
+      touch: true, // Reset session timeout on each request (implements inactivity timeout)
+      cookie: { maxAge: SESSION_TIMEOUT_MS }
     }));
 
     app.use((req, res, next) => {
       res.locals.user = req.session && req.session.user ? req.session.user : null;
+      res.locals.sessionTimeoutHours = SESSION_TIMEOUT_HOURS;
       next();
     });
 
@@ -87,6 +103,25 @@ const { initializeS3 } = require('./services/s3Service');
 
     app.get('/health', (req, res) => {
       res.status(200).send('OK');
+    });
+
+    // Global error handler for unhandled errors
+    app.use((err, _req, res, _next) => {
+      console.error('Unhandled error:', err);
+      const isApiRoute = _req.path.startsWith('/api/');
+      if (isApiRoute) {
+        return res.status(500).json({ error: err.message || 'Internal server error' });
+      }
+      res.status(500).send('Internal server error');
+    });
+
+    // 404 handler
+    app.use((_req, res) => {
+      const isApiRoute = _req.path.startsWith('/api/');
+      if (isApiRoute) {
+        return res.status(404).json({ error: 'Endpoint not found' });
+      }
+      res.status(404).send('Not found');
     });
 
     const PORT = process.env.PORT || 8080;

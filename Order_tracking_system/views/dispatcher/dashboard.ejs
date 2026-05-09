@@ -110,12 +110,12 @@ function DispatchModal({ order, loadingLocations, onSubmit, onClose }) {
       let fileToUpload = selectedFile;
       let compressedSize = null;
 
-      // Compress if file > 1MB (if ImageCompression library is available)
-      if (selectedFile.size > 1024 * 1024 && typeof window.ImageCompression !== 'undefined') {
+      // Compress if file > 500KB
+      if (selectedFile.size > 500 * 1024 && typeof window.ImageCompression !== 'undefined') {
         setUploadProgress(10);
         try {
           const options = {
-            maxSizeMB: 1,
+            maxSizeMB: 0.5,
             maxWidthOrHeight: 1920,
             useWebWorker: true,
           };
@@ -124,29 +124,14 @@ function DispatchModal({ order, loadingLocations, onSubmit, onClose }) {
           console.log(`Compressed image: ${selectedFile.size} → ${fileToUpload.size} bytes`);
         } catch (compressError) {
           console.warn('Image compression failed, using original:', compressError.message);
-          // Continue with original file if compression fails
         }
       }
 
-      setUploadProgress(30);
+      setUploadProgress(20);
 
-      // Read file as base64
-      console.log('Reading file...');
-      const fileBase64 = await new Promise((resolve, reject) => {
-        const reader = new FileReader();
-        reader.onload = () => {
-          const base64String = reader.result.split(',')[1];
-          resolve(base64String);
-        };
-        reader.onerror = reject;
-        reader.readAsDataURL(fileToUpload);
-      });
-
-      setUploadProgress(50);
-
-      // Upload to backend
-      console.log('Uploading receipt to backend...');
-      const uploadRes = await fetch('/api/dispatcher/upload-receipt', {
+      // Step 1: Request presigned URL from backend
+      console.log('Requesting presigned URL from backend...');
+      const presignedRes = await fetch('/api/dispatcher/presigned-url', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -154,26 +139,45 @@ function DispatchModal({ order, loadingLocations, onSubmit, onClose }) {
           dealer_id: order.dealer_id,
           file_name: fileToUpload.name,
           file_type: fileToUpload.type,
-          file_data: fileBase64,
         }),
       });
 
-      if (!uploadRes.ok) {
-        const errorData = await uploadRes.json();
-        throw new Error(`Failed to upload: ${errorData.error || 'Unknown error'}`);
+      if (!presignedRes.ok) {
+        const errorData = await presignedRes.json().catch(() => ({}));
+        throw new Error(errorData.error || `Failed to get presigned URL: ${presignedRes.status}`);
       }
 
-      const uploadResult = await uploadRes.json();
-      console.log('Receipt uploaded successfully:', uploadResult.image_url);
+      const { url: presignedUrl, s3Key } = await presignedRes.json();
+      console.log('Presigned URL received:', s3Key);
+      setUploadProgress(40);
 
-      setUploadProgress(90);
+      // Step 2: Upload file directly to S3 using presigned URL
+      console.log('Uploading file directly to S3...');
+      const s3UploadRes = await fetch(presignedUrl, {
+        method: 'PUT',
+        body: fileToUpload,
+        headers: { 'Content-Type': fileToUpload.type },
+      });
+
+      if (!s3UploadRes.ok) {
+        throw new Error(`S3 upload failed: ${s3UploadRes.status} ${s3UploadRes.statusText}`);
+      }
+
+      setUploadProgress(80);
+
+      // Step 3: Construct S3 URL from s3Key
+      // Extract bucket and region from presignedUrl
+      const s3Url = presignedUrl.split('?')[0]; // Remove query params from presigned URL
+      console.log('Receipt uploaded to S3:', s3Url);
+
+      setUploadProgress(95);
 
       // Store metadata
-      setUploadedImageUrl(uploadResult.image_url);
+      setUploadedImageUrl(s3Url);
       setImageMetadata({
-        image_url: uploadResult.image_url,
-        image_type: uploadResult.image_type,
-        image_original_size: uploadResult.image_original_size,
+        image_url: s3Url,
+        image_type: fileToUpload.type,
+        image_original_size: selectedFile.size,
         image_compressed_size: compressedSize,
       });
 
@@ -319,7 +323,7 @@ function DispatchModal({ order, loadingLocations, onSubmit, onClose }) {
                       disabled={uploading}
                       className="form-control"
                     />
-                    <small className="text-muted d-block mt-1">Accepted: JPG, PNG, GIF, WebP. Max 1 MB after compression.</small>
+                    <small className="text-muted d-block mt-1">Accepted: JPG, PNG, GIF, WebP. Auto-compressed to ~500 KB if larger.</small>
                   </div>
 
                   {imagePreview && (

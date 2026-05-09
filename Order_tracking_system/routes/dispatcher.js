@@ -1,14 +1,47 @@
 const express = require('express');
 const router = express.Router();
 const pool = require('../db');
-const { generatePresignedUploadUrl, uploadFileToS3 } = require('../services/s3Service');
+const { generatePresignedUploadUrl, generatePresignedReadUrl } = require('../services/s3Service');
 const { broadcastOrderUpdate } = require('../services/sseService');
 
 function ensureDispatcher(req, res, next) {
-  if (!req.session?.user) return res.redirect('/signin');
+  if (!req.session?.user) {
+    const isApiRoute = req.path.startsWith('/api/');
+    return isApiRoute ? res.status(401).json({ error: 'Unauthorized' }) : res.redirect('/signin');
+  }
   const role = req.session.user.role;
-  if (role !== 'DISPATCHER' && role !== 'ADMIN') return res.status(403).send('Access denied. Dispatcher or Admin only.');
+  if (role !== 'DISPATCHER' && role !== 'ADMIN') {
+    const isApiRoute = req.path.startsWith('/api/');
+    return isApiRoute ? res.status(403).json({ error: 'Access denied. Dispatcher or Admin only.' }) : res.status(403).send('Access denied. Dispatcher or Admin only.');
+  }
   return next();
+}
+
+// Generate presigned URLs for receipt images
+async function addPresignedUrlsToDispatcherOrders(orders) {
+  try {
+    for (const order of orders) {
+      if (order.image_url && !order.image_url.includes('?')) {
+        const receiptIndex = order.image_url.indexOf('/receipts/');
+        let s3Key = null;
+        if (receiptIndex !== -1) {
+          s3Key = order.image_url.substring(receiptIndex + 1);
+        }
+        if (s3Key) {
+          try {
+            console.log(`[Dispatcher] Generating presigned URL for: ${s3Key}`);
+            const presignedUrl = await generatePresignedReadUrl(s3Key);
+            order.image_url = presignedUrl;
+          } catch (err) {
+            console.error(`[Dispatcher] Failed to generate presigned URL for ${s3Key}:`, err.message);
+          }
+        }
+      }
+    }
+  } catch (err) {
+    console.error('[Dispatcher] Error adding presigned URLs:', err.message);
+  }
+  return orders;
 }
 
 // Page route
@@ -74,7 +107,8 @@ router.get('/api/dispatcher/orders', ensureDispatcher, async (req, res) => {
       ORDER BY o.dealer_id, o.order_date ASC
     `, [statusFilter]);
 
-    res.json(result.rows);
+    const ordersWithPresignedUrls = await addPresignedUrlsToDispatcherOrders(result.rows);
+    res.json(ordersWithPresignedUrls);
   } catch (e) {
     console.error('[Dispatcher] orders error:', e.message);
     res.status(500).json({ error: e.message });
@@ -107,33 +141,7 @@ router.post('/api/dispatcher/orders/:id/accept', ensureDispatcher, async (req, r
   }
 });
 
-// POST file upload endpoint (backend uploads to S3)
-router.post('/api/dispatcher/upload-receipt', ensureDispatcher, async (req, res) => {
-  try {
-    const { order_id, dealer_id, file_name, file_type, file_data } = req.body;
-
-    if (!order_id || !dealer_id || !file_name || !file_type || !file_data) {
-      return res.status(400).json({ error: 'Missing required fields: order_id, dealer_id, file_name, file_type, file_data' });
-    }
-
-    // Convert base64 to buffer
-    const fileBuffer = Buffer.from(file_data, 'base64');
-
-    console.log(`[Dispatcher] Receipt upload request: order=${order_id}, dealer=${dealer_id}, file=${file_name}, size=${fileBuffer.length} bytes`);
-    const uploadResult = await uploadFileToS3(dealer_id, order_id, fileBuffer, file_name, file_type);
-    res.json({
-      success: true,
-      image_url: uploadResult.s3Url,
-      image_type: file_type,
-      image_original_size: uploadResult.fileSize,
-    });
-  } catch (error) {
-    console.error('[Dispatcher] Receipt upload error:', error);
-    res.status(500).json({ error: `Failed to upload receipt: ${error.message}` });
-  }
-});
-
-// POST presigned URL for receipt upload (legacy, kept for backward compatibility)
+// POST presigned URL for receipt upload
 router.post('/api/dispatcher/presigned-url', ensureDispatcher, async (req, res) => {
   try {
     const { order_id, dealer_id, file_name, file_type } = req.body;

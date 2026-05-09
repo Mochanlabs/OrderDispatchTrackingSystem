@@ -81,6 +81,8 @@ async function generatePresignedReadUrl(s3Key) {
   if (!s3Client) throw new Error('S3 service not initialized');
 
   try {
+    console.log(`[S3] Generating presigned read URL: bucket=${s3Config.bucket}, key=${s3Key}`);
+
     const command = new GetObjectCommand({
       Bucket: s3Config.bucket,
       Key: s3Key,
@@ -88,9 +90,13 @@ async function generatePresignedReadUrl(s3Key) {
 
     // Pre-signed URL expires in 24 hours
     const url = await getSignedUrl(s3Client, command, { expiresIn: 86400 });
+    console.log(`[S3] Presigned URL generated successfully (length: ${url.length} chars)`);
     return url;
   } catch (error) {
-    console.error('Error generating presigned read URL:', error);
+    console.error('[S3] Error generating presigned read URL:', error.message);
+    console.error('[S3] Error code:', error.code);
+    console.error('[S3] Error name:', error.name);
+    console.error('[S3] Full error:', error);
     throw error;
   }
 }
