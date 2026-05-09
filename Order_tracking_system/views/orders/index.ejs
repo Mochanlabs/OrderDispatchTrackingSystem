@@ -729,9 +729,12 @@ function App() {
     prefLocation: true,
     orderDate: true,
     status: true,
-    dispatch: true,
+    dispatch: false,
+    driverPhone: false,
+    biltyNumber: false,
   });
 
+  const [showDispatchDetails, setShowDispatchDetails] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
   const esRef = useRef(null);
   const retryRef = useRef(null);
@@ -987,6 +990,12 @@ function App() {
         <div className="card-header bg-white d-flex align-items-center justify-content-between py-2 py-sm-3 flex-wrap gap-2">
           <h5 className="mb-0 fw-semibold">{IS_ADMIN_OR_OFFICE ? '📊 All Orders & Dispatch' : '📋 My Orders'}</h5>
           <div className="d-flex gap-1 gap-sm-2 flex-wrap">
+            {IS_ADMIN_OR_OFFICE && (
+              <button className={`btn btn-sm ${showDispatchDetails ? 'btn-info' : 'btn-outline-info'}`}
+                onClick={() => {setShowDispatchDetails(!showDispatchDetails);setVisibleCols(prev=>({...prev,dispatch:!showDispatchDetails,driverPhone:!showDispatchDetails,biltyNumber:!showDispatchDetails}));}}>
+                📦 <span className="d-none d-sm-inline">Dispatch Details</span>
+              </button>
+            )}
             <div className="dropdown position-relative">
               <button className="btn btn-outline-secondary btn-sm" onClick={() => setShowColumnPicker(!showColumnPicker)}>
                 ⚙️ <span className="d-none d-sm-inline">Columns</span>
@@ -1027,10 +1036,6 @@ function App() {
                     <div className="form-check mb-2">
                       <input className="form-check-input" type="checkbox" id="col-status" checked={visibleCols.status} onChange={() => toggleColumn('status')} />
                       <label className="form-check-label" htmlFor="col-status">Status</label>
-                    </div>
-                    <div className="form-check">
-                      <input className="form-check-input" type="checkbox" id="col-dispatch" checked={visibleCols.dispatch} onChange={() => toggleColumn('dispatch')} />
-                      <label className="form-check-label" htmlFor="col-dispatch">Dispatch</label>
                     </div>
                     <hr className="my-2" />
                     <button className="btn btn-sm btn-outline-primary w-100" onClick={() => setShowColumnPicker(false)}>Close</button>
@@ -1127,6 +1132,8 @@ function App() {
                     {visibleCols.orderDate && <SortTh col="order_date" style={{ width: 100, minWidth: 100 }}>Order Date</SortTh>}
                     {visibleCols.status && <th style={{ width: 100, minWidth: 100, textAlign: 'center' }}>Status</th>}
                     {visibleCols.dispatch && <th style={{ width: 80, minWidth: 80, textAlign: 'center' }}>Dispatch</th>}
+                    {visibleCols.driverPhone && <th style={{ width: 100, minWidth: 100, textAlign: 'center' }}>Driver Phone</th>}
+                    {visibleCols.biltyNumber && <th style={{ width: 90, minWidth: 90, textAlign: 'center' }}>Bilty No.</th>}
                     <th style={{ width: 140, minWidth: 140, textAlign: 'center' }}>Action</th>
                   </tr>
                 </thead>
@@ -1165,6 +1172,22 @@ function App() {
                               </div>
                             )}
                           </div>
+                        ) : (
+                          <span className="text-muted small">—</span>
+                        )}
+                      </td>}
+                      {visibleCols.driverPhone && <td className="text-center">
+                        {o.dispatch?.driver_phone ? (
+                          <a href={`tel:${o.dispatch.driver_phone}`} className="text-decoration-none fw-semibold">
+                            ☎️ {o.dispatch.driver_phone}
+                          </a>
+                        ) : (
+                          <span className="text-muted small">—</span>
+                        )}
+                      </td>}
+                      {visibleCols.biltyNumber && <td className="text-center">
+                        {o.dispatch?.bilty_number ? (
+                          <span className="fw-semibold">{o.dispatch.bilty_number}</span>
                         ) : (
                           <span className="text-muted small">—</span>
                         )}
