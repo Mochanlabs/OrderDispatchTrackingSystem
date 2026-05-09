@@ -1,7 +1,7 @@
 const express = require('express');
 const router = express.Router();
 const pool = require('../db');
-const { generatePresignedUploadUrl, uploadFileToS3, generatePresignedReadUrl } = require('../services/s3Service');
+const { generatePresignedUploadUrl, generatePresignedReadUrl } = require('../services/s3Service');
 const { broadcastOrderUpdate } = require('../services/sseService');
 
 function ensureDispatcher(req, res, next) {
@@ -141,52 +141,7 @@ router.post('/api/dispatcher/orders/:id/accept', ensureDispatcher, async (req, r
   }
 });
 
-// POST file upload endpoint (backend uploads to S3)
-router.post('/api/dispatcher/upload-receipt', ensureDispatcher, async (req, res) => {
-  try {
-    const { order_id, dealer_id, file_name, file_type, file_data } = req.body;
-
-    // Log the size of the base64 string in the request body
-    const base64SizeMB = file_data ? (file_data.length / (1024 * 1024)).toFixed(2) : '0';
-    console.log(`[Dispatcher] Upload request: Content-Length=${req.get('content-length')} bytes, base64_size=${base64SizeMB} MB`);
-
-    if (!order_id || !dealer_id || !file_name || !file_type || !file_data) {
-      const missing = [];
-      if (!order_id) missing.push('order_id');
-      if (!dealer_id) missing.push('dealer_id');
-      if (!file_name) missing.push('file_name');
-      if (!file_type) missing.push('file_type');
-      if (!file_data) missing.push('file_data');
-      console.error(`[Dispatcher] Missing fields: ${missing.join(', ')}`);
-      return res.status(400).json({ error: `Missing required fields: ${missing.join(', ')}` });
-    }
-
-    // Convert base64 to buffer
-    let fileBuffer;
-    try {
-      fileBuffer = Buffer.from(file_data, 'base64');
-    } catch (e) {
-      console.error('[Dispatcher] Base64 conversion error:', e.message);
-      return res.status(400).json({ error: 'Invalid base64 data' });
-    }
-
-    const fileSizeMB = (fileBuffer.length / (1024 * 1024)).toFixed(2);
-    console.log(`[Dispatcher] Receipt upload: order=${order_id}, dealer=${dealer_id}, file=${file_name}, decompressed_size=${fileSizeMB} MB`);
-    const uploadResult = await uploadFileToS3(dealer_id, order_id, fileBuffer, file_name, file_type);
-    res.json({
-      success: true,
-      image_url: uploadResult.s3Url,
-      image_type: file_type,
-      image_original_size: uploadResult.fileSize,
-    });
-  } catch (error) {
-    console.error('[Dispatcher] Receipt upload error:', error.message);
-    console.error('[Dispatcher] Error stack:', error.stack);
-    res.status(500).json({ error: `Failed to upload receipt: ${error.message}` });
-  }
-});
-
-// POST presigned URL for receipt upload (legacy, kept for backward compatibility)
+// POST presigned URL for receipt upload
 router.post('/api/dispatcher/presigned-url', ensureDispatcher, async (req, res) => {
   try {
     const { order_id, dealer_id, file_name, file_type } = req.body;
