@@ -87,6 +87,9 @@ function toOrderShape(row) {
     preferred_location_code: row.preferred_location_code || null,
     preferred_location_desc: row.preferred_location_desc || row.preferred_location_code || null,
     delivery_location:       row.preferred_location_desc || row.preferred_location_code || null,
+    driver_name_on_order:    row.driver_name    || null,
+    driver_phone_on_order:   row.driver_phone   || null,
+    vehicle_number_on_order: row.vehicle_number || null,
     remarks:                 row.remarks || '',
     order_status:            row.order_status,
     on_hold_by:              row.on_hold_by || null,
@@ -694,7 +697,8 @@ router.post('/api/admin/orders/on-behalf', ensureDealer, async (req, res) => {
     const role = req.session.user.role;
     if (role !== 'ADMIN' && role !== 'OFFICE_EXECUTIVE') return res.status(403).json({ error: 'Only admins and office executives can create orders on behalf' });
 
-    const { items, dealer_id, party_id, load_type_code, preferred_location_code } = req.body;
+    const { items, dealer_id, party_id, load_type_code, preferred_location_code,
+            driver_name, driver_phone, vehicle_number } = req.body;
 
     if (!Array.isArray(items) || items.length === 0) {
       return res.status(400).json({ error: 'At least one product item is required' });
@@ -738,8 +742,9 @@ router.post('/api/admin/orders/on-behalf', ensureDealer, async (req, res) => {
       const orderResult = await client.query(`
         INSERT INTO odts.dealer_orders
           (dealer_id, product_id, order_quantity, party_id, load_type_code, preferred_location_code,
+           driver_name, driver_phone, vehicle_number,
            order_status, order_date, created_by, created_at, updated_by, updated_at)
-        VALUES ($1, $2, $3, $4, $5, $6, 'ORDER_PLACED', NOW(), $7, NOW(), $7, NOW())
+        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, 'ORDER_PLACED', NOW(), $10, NOW(), $10, NOW())
         RETURNING *
       `, [
         dealer_id,
@@ -748,6 +753,9 @@ router.post('/api/admin/orders/on-behalf', ensureDealer, async (req, res) => {
         party_id ? parseInt(party_id, 10) : null,
         load_type_code || null,
         preferred_location_code || null,
+        driver_name ? driver_name.trim() : null,
+        driver_phone ? driver_phone.trim() : null,
+        vehicle_number ? vehicle_number.trim() : null,
         req.session.user.id,
       ]);
 
@@ -790,7 +798,8 @@ router.post('/api/admin/orders/on-behalf', ensureDealer, async (req, res) => {
 
 // POST /api/dealer/orders — place a new order with one or more products
 router.post('/api/dealer/orders', ensureDealer, async (req, res) => {
-  const { items, party_id, load_type_code, preferred_location_code } = req.body;
+  const { items, party_id, load_type_code, preferred_location_code,
+          driver_name, driver_phone, vehicle_number } = req.body;
 
   if (!Array.isArray(items) || items.length === 0) {
     return res.status(400).json({ error: 'At least one product item is required' });
@@ -835,8 +844,9 @@ router.post('/api/dealer/orders', ensureDealer, async (req, res) => {
     const orderResult = await client.query(`
       INSERT INTO odts.dealer_orders
         (dealer_id, product_id, order_quantity, party_id, load_type_code, preferred_location_code,
+         driver_name, driver_phone, vehicle_number,
          order_status, order_date, created_by, created_at, updated_by, updated_at)
-      VALUES ($1, $2, $3, $4, $5, $6, 'ORDER_PLACED', NOW(), $7, NOW(), $7, NOW())
+      VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, 'ORDER_PLACED', NOW(), $10, NOW(), $10, NOW())
       RETURNING *
     `, [
       dealer_id,
@@ -845,6 +855,9 @@ router.post('/api/dealer/orders', ensureDealer, async (req, res) => {
       party_id  ? parseInt(party_id, 10)   : null,
       load_type_code          || null,
       preferred_location_code || null,
+      driver_name    ? driver_name.trim()    : null,
+      driver_phone   ? driver_phone.trim()   : null,
+      vehicle_number ? vehicle_number.trim() : null,
       userId,
     ]);
 

@@ -499,7 +499,154 @@ function QtyCell({ order }) {
   return <span>{display % 1 === 0 ? display : display.toFixed(3)} MT</span>;
 }
 
-function OrderRow({ order, onAccept, onDispatch }) {
+function ViewOrderModal({ order, onClose }) {
+  if (!order) return null;
+  return (
+    <div className="modal d-block" tabIndex="-1" style={{ background: 'rgba(0,0,0,0.5)' }}>
+      <div className="modal-dialog modal-dialog-centered modal-lg">
+        <div className="modal-content">
+          <div className="modal-header bg-info text-white">
+            <h5 className="modal-title">📋 Order #{order.order_id} — Details</h5>
+            <button type="button" className="btn-close btn-close-white" onClick={onClose}></button>
+          </div>
+          <div className="modal-body" style={{ maxHeight: '70vh', overflowY: 'auto' }}>
+            {/* Order Info */}
+            <h6 className="fw-bold text-muted mb-3 text-uppercase small">Order Information</h6>
+            <div className="row g-3 mb-4">
+              <div className="col-md-4">
+                <div className="p-3 bg-light rounded">
+                  <div className="text-muted small">Dealer</div>
+                  <div className="fw-semibold">{order.dealer_name || '—'}</div>
+                </div>
+              </div>
+              <div className="col-md-4">
+                <div className="p-3 bg-light rounded">
+                  <div className="text-muted small">Order Date</div>
+                  <div className="fw-semibold">{fmt(order.order_date)}</div>
+                </div>
+              </div>
+              <div className="col-md-4">
+                <div className="p-3 bg-light rounded">
+                  <div className="text-muted small">Status</div>
+                  <div><StatusBadge status={order.order_status} /></div>
+                </div>
+              </div>
+              <div className="col-12">
+                <div className="p-3 bg-light rounded">
+                  <div className="text-muted small mb-2 fw-semibold">Products & Quantities</div>
+                  <table className="table table-sm table-bordered mb-0" style={{ fontSize: '.88rem' }}>
+                    <thead className="table-light">
+                      <tr>
+                        <th>Product</th>
+                        <th style={{ width: 90 }}>Bags</th>
+                        <th style={{ width: 110 }}>Qty (MT)</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {order.items && order.items.length > 0 ? (
+                        order.items.map((item, idx) => (
+                          <tr key={idx}>
+                            <td>{item.product_name || `#${item.product_id}`}</td>
+                            <td>{item.order_bags || '—'}</td>
+                            <td>{parseFloat(item.order_quantity).toFixed(3)}</td>
+                          </tr>
+                        ))
+                      ) : (
+                        <tr><td colSpan={3} className="text-muted text-center py-2">No items</td></tr>
+                      )}
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+              <div className="col-md-6">
+                <div className="p-3 bg-light rounded">
+                  <div className="text-muted small">Party</div>
+                  <div className="fw-semibold">{order.party_company_name || order.party_name_col || '—'}</div>
+                </div>
+              </div>
+              <div className="col-md-6">
+                <div className="p-3 bg-light rounded">
+                  <div className="text-muted small">Party Phone</div>
+                  <div className="fw-semibold">
+                    {order.party_phone
+                      ? <a href={`tel:${order.party_phone}`}>{order.party_phone}</a>
+                      : '—'}
+                  </div>
+                </div>
+              </div>
+              <div className="col-12">
+                <div className="p-3 bg-light rounded">
+                  <div className="text-muted small">Delivery Address</div>
+                  <div className="fw-semibold">{order.party_address || '—'}</div>
+                </div>
+              </div>
+              <div className="col-md-6">
+                <div className="p-3 bg-light rounded">
+                  <div className="text-muted small">Load Type</div>
+                  <div className="fw-semibold">{order.load_type_desc || order.load_type_code || '—'}</div>
+                </div>
+              </div>
+              <div className="col-md-6">
+                <div className="p-3 bg-light rounded">
+                  <div className="text-muted small">Preferred Loading Location</div>
+                  <div className="fw-semibold">{order.preferred_location_desc || order.preferred_location_code || '—'}</div>
+                </div>
+              </div>
+            </div>
+
+            {/* Dispatch Info */}
+            {order.dispatch_id && (
+              <>
+                <h6 className="fw-bold text-muted mb-3 text-uppercase small">Dispatch Information</h6>
+                <div className="row g-3 mb-4">
+                  <div className="col-md-4">
+                    <div className="p-3 bg-light rounded">
+                      <div className="text-muted small">Vehicle No.</div>
+                      <div className="fw-semibold">{order.dispatch_vehicle_number || '—'}</div>
+                    </div>
+                  </div>
+                  <div className="col-md-4">
+                    <div className="p-3 bg-light rounded">
+                      <div className="text-muted small">Driver Name</div>
+                      <div className="fw-semibold">{order.driver_name || '—'}</div>
+                    </div>
+                  </div>
+                  <div className="col-md-4">
+                    <div className="p-3 bg-light rounded">
+                      <div className="text-muted small">Driver Phone</div>
+                      <div className="fw-semibold">
+                        {order.driver_phone
+                          ? <a href={`tel:${order.driver_phone}`}>{order.driver_phone}</a>
+                          : '—'}
+                      </div>
+                    </div>
+                  </div>
+                  <div className="col-md-6">
+                    <div className="p-3 bg-light rounded">
+                      <div className="text-muted small">Bilty Number</div>
+                      <div className="fw-semibold">{order.bilty_number || '—'}</div>
+                    </div>
+                  </div>
+                  <div className="col-md-6">
+                    <div className="p-3 bg-light rounded">
+                      <div className="text-muted small">Dispatch Date</div>
+                      <div className="fw-semibold">{fmt(order.dispatch_created_at) || '—'}</div>
+                    </div>
+                  </div>
+                </div>
+              </>
+            )}
+          </div>
+          <div className="modal-footer">
+            <button className="btn btn-secondary" onClick={onClose}>Close</button>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function OrderRow({ order, onAccept, onDispatch, onView }) {
   const [accepting, setAccepting] = useState(false);
 
   const handleAccept = async () => {
@@ -527,6 +674,9 @@ function OrderRow({ order, onAccept, onDispatch }) {
       <td className="d-none d-xl-table-cell">{order.preferred_location_desc || order.preferred_location_code || '—'}</td>
       <td><StatusBadge status={order.order_status} /></td>
       <td className="text-nowrap">
+        <button className="btn btn-sm btn-outline-primary me-1" onClick={() => onView(order)}>
+          👁️ View
+        </button>
         {order.order_status === 'ORDER_PLACED' && (
           <button className="btn btn-sm btn-outline-info" disabled={accepting} onClick={handleAccept}>
             {accepting
@@ -555,7 +705,7 @@ function OrderRow({ order, onAccept, onDispatch }) {
   );
 }
 
-function DealerGroup({ orders, onAccept, onDispatch }) {
+function DealerGroup({ orders, onAccept, onDispatch, onView }) {
   const [expanded, setExpanded] = useState(true);
 
   const placedCount    = orders.filter(o => o.order_status === 'ORDER_PLACED').length;
@@ -618,6 +768,7 @@ function DealerGroup({ orders, onAccept, onDispatch }) {
                     order={o}
                     onAccept={onAccept}
                     onDispatch={onDispatch}
+                    onView={onView}
                   />
                 ))}
               </tbody>
@@ -635,6 +786,7 @@ function App() {
   const [showOnHold,      setShowOnHold]      = useState(false);
   const [showDispatched,  setShowDispatched]  = useState(false);
   const [dispatchModal,   setDispatchModal]   = useState(null);
+  const [viewOrder,       setViewOrder]       = useState(null);
   const [loadingLocs,     setLoadingLocs]     = useState([]);
   const [toast,           setToast]           = useState(null);
   const [refreshing,      setRefreshing]      = useState(false);
@@ -747,6 +899,13 @@ function App() {
         />
       )}
 
+      {viewOrder && (
+        <ViewOrderModal
+          order={viewOrder}
+          onClose={() => setViewOrder(null)}
+        />
+      )}
+
       {/* Stats */}
       <div className="row g-3 mb-4">
         <div className="col-6 col-md-4">
@@ -823,6 +982,7 @@ function App() {
             orders={dealerOrders}
             onAccept={handleAccept}
             onDispatch={order => setDispatchModal(order)}
+            onView={order => setViewOrder(order)}
           />
         ))
       )}

@@ -108,6 +108,27 @@
             </select>
           </div>
 
+          <!-- Self DOT Driver Details (shown only when Self DOT selected) -->
+          <div id="dot-driver-section" class="col-12 d-none">
+            <div class="p-3 border rounded" style="background:#f0f8ff; border-color:#b0d4f1 !important;">
+              <div class="fw-semibold small text-primary mb-3">🚛 Self DOT — Driver Details</div>
+              <div class="row g-3">
+                <div class="col-md-4">
+                  <label class="form-label fw-semibold small">Driver Name</label>
+                  <input type="text" id="driver_name" class="form-control" placeholder="e.g. Ramesh Kumar">
+                </div>
+                <div class="col-md-4">
+                  <label class="form-label fw-semibold small">Driver Phone</label>
+                  <input type="tel" id="driver_phone" class="form-control" placeholder="e.g. 9876543210">
+                </div>
+                <div class="col-md-4">
+                  <label class="form-label fw-semibold small">Vehicle Number</label>
+                  <input type="text" id="vehicle_number" class="form-control" placeholder="e.g. MH12AB1234">
+                </div>
+              </div>
+            </div>
+          </div>
+
           <div class="col-12 d-flex gap-2 justify-content-end pt-2">
             <a href="/orders" class="btn btn-light border">Cancel</a>
             <button type="submit" class="btn btn-primary" id="submit-btn">Place Order</button>
@@ -121,6 +142,7 @@
 <script>
   let productsData = [];
   let dealerLimit = null;
+  const repeatOrderId = new URLSearchParams(window.location.search).get('repeat');
 
   // ── Load dealer limit ────────────────────────────────────────────────────
   (async () => {
@@ -269,6 +291,19 @@
     } catch (e) { sel.innerHTML = '<option value="">Failed to load</option>'; }
   })();
 
+  // Self DOT Driver Section visibility
+  document.getElementById('load_type_code').addEventListener('change', function () {
+    const section = document.getElementById('dot-driver-section');
+    if (this.value === 'SLF_DOT') {
+      section.classList.remove('d-none');
+    } else {
+      section.classList.add('d-none');
+      document.getElementById('driver_name').value = '';
+      document.getElementById('driver_phone').value = '';
+      document.getElementById('vehicle_number').value = '';
+    }
+  });
+
   // ── Party logic ──────────────────────────────────────────────────────────
   let partiesData = [];
 
@@ -318,6 +353,83 @@
       document.getElementById('party_select').dispatchEvent(new Event('change'));
     }
   });
+
+  // ── Repeat Order: Prefill form with original order data ──────────────────
+  async function prefillRepeatOrder() {
+    if (!repeatOrderId) return;
+    try {
+      console.log(`[Repeat Order] Fetching order #${repeatOrderId}...`);
+      const res = await fetch(`/api/dealer/orders/${repeatOrderId}`, { credentials: 'include' });
+      if (!res.ok) {
+        console.error(`[Repeat Order] Failed to fetch order: ${res.status}`);
+        return;
+      }
+      const order = await res.json();
+      console.log(`[Repeat Order] Order data received:`, order);
+
+      // Clear existing rows and prefill items
+      const container = document.getElementById('items-container');
+      container.innerHTML = '';
+      const itemsToFill = (order.items && order.items.length > 0) ? order.items : [{}];
+      itemsToFill.forEach(item => {
+        const newRow = createItemRow();
+        container.appendChild(newRow);
+        if (item.product_id) {
+          newRow.querySelector('.item-product').value = item.product_id;
+        }
+        if (item.order_bags) {
+          const bagsInput = newRow.querySelector('.item-bags');
+          bagsInput.value = item.order_bags;
+          bagsInput.dispatchEvent(new Event('input'));
+        }
+      });
+      updateRemoveButtons();
+
+      // Prefill party
+      if (order.party_id) {
+        const partySelect = document.getElementById('party_select');
+        partySelect.value = order.party_id;
+        partySelect.dispatchEvent(new Event('change'));
+      }
+
+      // Prefill load type
+      if (order.load_type_code) {
+        document.getElementById('load_type_code').value = order.load_type_code;
+        document.getElementById('load_type_code').dispatchEvent(new Event('change'));
+      }
+
+      // Prefill preferred location
+      if (order.preferred_location_code) {
+        document.getElementById('preferred_location_code').value = order.preferred_location_code;
+      }
+
+      // Prefill Self DOT driver fields if applicable
+      if (order.load_type_code === 'SLF_DOT') {
+        if (order.driver_name_on_order) {
+          document.getElementById('driver_name').value = order.driver_name_on_order;
+        }
+        if (order.driver_phone_on_order) {
+          document.getElementById('driver_phone').value = order.driver_phone_on_order;
+        }
+        if (order.vehicle_number_on_order) {
+          document.getElementById('vehicle_number').value = order.vehicle_number_on_order;
+        }
+      }
+
+      // Show info banner
+      const banner = document.createElement('div');
+      banner.className = 'alert alert-info mb-3';
+      banner.innerHTML = `🔁 <strong>Repeating Order #${repeatOrderId}</strong> — Details have been prefilled. Review and change before submitting.`;
+      document.getElementById('new-order-form').insertBefore(banner, document.getElementById('new-order-form').firstChild);
+    } catch (e) {
+      console.error('Failed to prefill repeat order:', e);
+    }
+  }
+
+  // Call prefill after a delay to ensure all dropdowns are loaded
+  if (repeatOrderId) {
+    setTimeout(prefillRepeatOrder, 1000);
+  }
 
   // ── Form submit ──────────────────────────────────────────────────────────
   const form      = document.getElementById('new-order-form');
@@ -392,6 +504,9 @@
         party_id,
         load_type_code:          document.getElementById('load_type_code').value          || null,
         preferred_location_code: document.getElementById('preferred_location_code').value || null,
+        driver_name:             document.getElementById('driver_name').value.trim()      || null,
+        driver_phone:            document.getElementById('driver_phone').value.trim()     || null,
+        vehicle_number:          document.getElementById('vehicle_number').value.trim()  || null,
       };
 
       const response = await fetch('/api/dealer/orders', {
