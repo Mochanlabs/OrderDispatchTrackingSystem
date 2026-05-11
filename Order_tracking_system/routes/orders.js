@@ -102,8 +102,8 @@ function toOrderShape(row) {
     order.dispatch = {
       dispatch_id:       row.dispatch_id,
       vehicle_no:        row.dispatch_vehicle_number || null,
-      driver_name:       row.driver_name || null,
-      driver_phone:      row.driver_phone || null,
+      driver_name:       row.dispatch_driver_name || null,
+      driver_phone:      row.dispatch_driver_phone || null,
       bilty_number:      row.bilty_number || null,
       dispatch_date:     row.dispatch_created_at || null,
       dispatch_status:   null,
@@ -235,7 +235,7 @@ async function fetchOrders({ dealerId, startDate, endDate }) {
            dp.party_company_name, dp.party_name AS party_name_col, dp.party_phone, dp.party_address,
            lt.code_desc  AS load_type_desc,
            pl.code_desc  AS preferred_location_desc,
-           od.dispatch_id, od.dispatch_vehicle_number, od.driver_name, od.driver_phone,
+           od.dispatch_id, od.dispatch_vehicle_number, od.driver_name AS dispatch_driver_name, od.driver_phone AS dispatch_driver_phone,
            od.bilty_number, od.actual_loading_location_code, od.created_at AS dispatch_created_at,
            od.image_url, od.image_type, od.image_original_size, od.image_compressed_size, od.image_uploaded_at,
            ${ITEMS_SUBQUERY}
@@ -556,7 +556,7 @@ router.get('/api/dealer/orders/by-driver/:phone', ensureDealer, async (req, res)
     const phone = String(req.params.phone || '').trim();
     const result = await pool.query(`
       SELECT o.*, d.dealer_name,
-             od.dispatch_id, od.dispatch_vehicle_number, od.driver_name, od.driver_phone,
+             od.dispatch_id, od.dispatch_vehicle_number, od.driver_name AS dispatch_driver_name, od.driver_phone AS dispatch_driver_phone,
              od.bilty_number, od.actual_loading_location_code, od.created_at AS dispatch_created_at,
              ${ITEMS_SUBQUERY}
       FROM odts.dealer_orders o
@@ -579,7 +579,7 @@ router.get('/api/dealer/orders/:id', ensureDealer, async (req, res) => {
              dp.party_company_name, dp.party_name AS party_name_col, dp.party_phone, dp.party_address,
              lt.code_desc AS load_type_desc,
              pl.code_desc AS preferred_location_desc,
-             od.dispatch_id, od.dispatch_vehicle_number, od.driver_name, od.driver_phone,
+             od.dispatch_id, od.dispatch_vehicle_number, od.driver_name AS dispatch_driver_name, od.driver_phone AS dispatch_driver_phone,
              od.bilty_number, od.actual_loading_location_code, od.created_at AS dispatch_created_at,
              ${ITEMS_SUBQUERY}
       FROM odts.dealer_orders o

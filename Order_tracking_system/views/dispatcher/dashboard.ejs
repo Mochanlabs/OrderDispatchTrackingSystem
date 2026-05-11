@@ -592,6 +592,29 @@ function ViewOrderModal({ order, onClose }) {
                   <div className="fw-semibold">{order.preferred_location_desc || order.preferred_location_code || '—'}</div>
                 </div>
               </div>
+
+              {/* Self DOT Driver Details (if applicable) */}
+              {order.load_type_code === 'SLF_DOT' && (order.driver_name_on_order || order.driver_phone_on_order || order.vehicle_number_on_order) && (
+                <div className="col-12">
+                  <div className="p-3 border rounded" style={{ background: '#f0f8ff', borderColor: '#b0d4f1' }}>
+                    <div className="fw-semibold small text-primary mb-3">🚛 Self DOT — Driver Details</div>
+                    <div className="row g-3">
+                      <div className="col-md-4">
+                        <div className="text-muted small">Driver Name</div>
+                        <div className="fw-semibold">{order.driver_name_on_order || '—'}</div>
+                      </div>
+                      <div className="col-md-4">
+                        <div className="text-muted small">Driver Phone</div>
+                        <div className="fw-semibold">{order.driver_phone_on_order || '—'}</div>
+                      </div>
+                      <div className="col-md-4">
+                        <div className="text-muted small">Vehicle Number</div>
+                        <div className="fw-semibold">{order.vehicle_number_on_order || '—'}</div>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              )}
             </div>
 
             {/* Dispatch Info */}
@@ -608,15 +631,15 @@ function ViewOrderModal({ order, onClose }) {
                   <div className="col-md-4">
                     <div className="p-3 bg-light rounded">
                       <div className="text-muted small">Driver Name</div>
-                      <div className="fw-semibold">{order.driver_name || '—'}</div>
+                      <div className="fw-semibold">{order.dispatch_driver_name || '—'}</div>
                     </div>
                   </div>
                   <div className="col-md-4">
                     <div className="p-3 bg-light rounded">
                       <div className="text-muted small">Driver Phone</div>
                       <div className="fw-semibold">
-                        {order.driver_phone
-                          ? <a href={`tel:${order.driver_phone}`}>{order.driver_phone}</a>
+                        {order.dispatch_driver_phone
+                          ? <a href={`tel:${order.dispatch_driver_phone}`}>{order.dispatch_driver_phone}</a>
                           : '—'}
                       </div>
                     </div>
