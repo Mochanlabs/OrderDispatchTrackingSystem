@@ -13,6 +13,24 @@
 
 <div id="app-root"></div>
 
+<style>
+  .count-card {
+    cursor: pointer !important;
+    transition: all 0.2s ease !important;
+  }
+  .count-card:hover {
+    transform: translateY(-4px) !important;
+    box-shadow: 0 8px 16px rgba(0,0,0,0.15) !important;
+  }
+  .count-card.disabled {
+    cursor: default !important;
+  }
+  .count-card.disabled:hover {
+    transform: none !important;
+    box-shadow: 0 0.125rem 0.25rem rgba(0, 0, 0, 0.075) !important;
+  }
+</style>
+
 <script type="text/babel">
 const { useState, useEffect, useCallback, useRef } = React;
 
@@ -61,9 +79,9 @@ function Toast({ msg, type, onClose }) {
 
 function DispatchModal({ order, loadingLocations, onSubmit, onClose }) {
   const [form, setForm] = useState({
-    vehicle_number: '',
-    driver_name: '',
-    driver_phone: '',
+    vehicle_number: order.load_type_code === 'SLF_DOT' ? (order.vehicle_number_on_order || '') : '',
+    driver_name: order.load_type_code === 'SLF_DOT' ? (order.driver_name_on_order || '') : '',
+    driver_phone: order.load_type_code === 'SLF_DOT' ? (order.driver_phone_on_order || '') : '',
     bilty_number: '',
     actual_loading_location_code: '',
   });
@@ -499,14 +517,21 @@ function QtyCell({ order }) {
   return <span>{display % 1 === 0 ? display : display.toFixed(3)} MT</span>;
 }
 
-function ViewOrderModal({ order, onClose }) {
+function ViewOrderModal({ order, onClose, onBack }) {
   if (!order) return null;
   return (
     <div className="modal d-block" tabIndex="-1" style={{ background: 'rgba(0,0,0,0.5)' }}>
       <div className="modal-dialog modal-dialog-centered modal-lg">
         <div className="modal-content">
-          <div className="modal-header bg-info text-white">
-            <h5 className="modal-title">📋 Order #{order.order_id} — Details</h5>
+          <div className="modal-header bg-info text-white d-flex align-items-center justify-content-between">
+            <div className="d-flex align-items-center gap-2">
+              {onBack && (
+                <button type="button" className="btn btn-sm btn-light" onClick={onBack} title="Go back">
+                  ← Back
+                </button>
+              )}
+              <h5 className="modal-title mb-0">📋 Order #{order.order_id} — Details</h5>
+            </div>
             <button type="button" className="btn-close btn-close-white" onClick={onClose}></button>
           </div>
           <div className="modal-body" style={{ maxHeight: '70vh', overflowY: 'auto' }}>
@@ -669,7 +694,315 @@ function ViewOrderModal({ order, onClose }) {
   );
 }
 
-function OrderRow({ order, onAccept, onDispatch, onView }) {
+function PendingDealersModal({ orders, onSelectDealer, onClose }) {
+  const pendingOrders = orders.filter(o => o.order_status === 'ORDER_PLACED' || o.order_status === 'ACCEPTED');
+  const dealerMap = {};
+
+  pendingOrders.forEach(o => {
+    if (!dealerMap[o.dealer_id]) {
+      dealerMap[o.dealer_id] = {
+        dealer_id: o.dealer_id,
+        dealer_name: o.dealer_name,
+        dealer_login_name: o.dealer_login_name,
+        dealer_company_name: o.dealer_company_name,
+        count: 0,
+      };
+    }
+    dealerMap[o.dealer_id].count++;
+  });
+
+  const dealers = Object.values(dealerMap).sort((a, b) => b.count - a.count);
+
+  return (
+    <div className="modal d-block" tabIndex="-1" style={{ background: 'rgba(0,0,0,0.55)' }}>
+      <div className="modal-dialog modal-dialog-centered">
+        <div className="modal-content">
+          <div className="modal-header" style={{ background: '#fd7e14', color: '#fff' }}>
+            <h5 className="modal-title">⏳ Dealers with Pending Orders</h5>
+            <button type="button" className="btn-close btn-close-white" onClick={onClose}></button>
+          </div>
+          <div className="modal-body">
+            {dealers.length === 0 ? (
+              <p className="text-muted text-center py-3">No pending orders</p>
+            ) : (
+              <div className="list-group">
+                {dealers.map(dealer => (
+                  <button
+                    key={dealer.dealer_id}
+                    type="button"
+                    className="list-group-item list-group-item-action"
+                    onClick={() => onSelectDealer(dealer.dealer_id)}
+                  >
+                    <div className="d-flex justify-content-between align-items-start">
+                      <div className="text-start">
+                        <div className="fw-semibold">{dealer.dealer_login_name || dealer.dealer_company_name || dealer.dealer_name}</div>
+                        {dealer.dealer_company_name && dealer.dealer_login_name && dealer.dealer_company_name !== dealer.dealer_login_name && (
+                          <small className="text-muted">{dealer.dealer_company_name}</small>
+                        )}
+                      </div>
+                      <span className="badge bg-warning text-dark">{dealer.count}</span>
+                    </div>
+                  </button>
+                ))}
+              </div>
+            )}
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function DealerOrdersModal({ orders, dealerId, onClose, onBack, onAccept, onDispatch, onView }) {
+  const [accepting, setAccepting] = useState({});
+
+  const dealerOrders = orders
+    .filter(o => o.dealer_id === dealerId && (o.order_status === 'ORDER_PLACED' || o.order_status === 'ACCEPTED'))
+    .sort((a, b) => new Date(a.order_date) - new Date(b.order_date));
+
+  const dealerName = dealerOrders[0]?.dealer_login_name || dealerOrders[0]?.dealer_company_name || dealerOrders[0]?.dealer_name || `Dealer #${dealerId}`;
+
+  const handleAccept = async (orderId) => {
+    setAccepting(prev => ({ ...prev, [orderId]: true }));
+    await onAccept(orderId);
+    setAccepting(prev => ({ ...prev, [orderId]: false }));
+  };
+
+  return (
+    <div className="modal d-block" tabIndex="-1" style={{ background: 'rgba(0,0,0,0.55)' }}>
+      <div className="modal-dialog modal-dialog-centered modal-lg">
+        <div className="modal-content">
+          <div className="modal-header d-flex align-items-center justify-content-between" style={{ background: '#fd7e14', color: '#fff' }}>
+            <div className="d-flex align-items-center gap-2">
+              {onBack && (
+                <button type="button" className="btn btn-sm btn-light" onClick={onBack} title="Go back to dealers">
+                  ← Back
+                </button>
+              )}
+              <h5 className="modal-title mb-0">⏳ Pending Orders — {dealerName}</h5>
+            </div>
+            <button type="button" className="btn-close btn-close-white" onClick={onClose}></button>
+          </div>
+          <div className="modal-body" style={{ maxHeight: '70vh', overflowY: 'auto' }}>
+            {dealerOrders.length === 0 ? (
+              <p className="text-muted text-center py-3">No pending orders</p>
+            ) : (
+              <div className="list-group">
+                {dealerOrders.map(order => (
+                  <div key={order.order_id} className="list-group-item" style={{ padding: '1rem' }}>
+                    <div className="d-flex justify-content-between align-items-start mb-2">
+                      <div>
+                        <div className="fw-semibold">Order #{order.order_id}</div>
+                        <small className="text-muted">{fmt(order.order_date)}</small>
+                      </div>
+                      <StatusBadge status={order.order_status} />
+                    </div>
+                    <div className="row g-2 small mb-3">
+                      <div className="col-6 col-sm-3">
+                        <div className="text-muted">Product</div>
+                        <div className="fw-semibold">{parseItems(order)[0]?.product_name || '—'}</div>
+                      </div>
+                      <div className="col-6 col-sm-3">
+                        <div className="text-muted">Qty (MT)</div>
+                        <div className="fw-semibold">{(() => {
+                          const items = parseItems(order);
+                          const total = items.reduce((s, i) => s + parseFloat(i.order_quantity || 0), 0);
+                          return total > 0 ? total.toFixed(3) : order.order_quantity || '—';
+                        })()}</div>
+                      </div>
+                      <div className="col-6 col-sm-3">
+                        <div className="text-muted">Party</div>
+                        <div className="fw-semibold">{order.party_company_name || order.party_name_col || '—'}</div>
+                      </div>
+                      <div className="col-6 col-sm-3">
+                        <div className="text-muted">Load Type</div>
+                        <div className="fw-semibold">{order.load_type_desc || order.load_type_code || '—'}</div>
+                      </div>
+                    </div>
+                    {/* Action buttons */}
+                    <div className="d-flex gap-2 flex-wrap" style={{ marginTop: '0.75rem' }}>
+                      <button className="btn btn-sm btn-outline-primary" onClick={() => onView(order)}>
+                        👁️ View
+                      </button>
+                      {order.order_status === 'ORDER_PLACED' && (
+                        <button
+                          className="btn btn-sm btn-outline-info"
+                          disabled={accepting[order.order_id]}
+                          onClick={() => handleAccept(order.order_id)}
+                        >
+                          {accepting[order.order_id] ? (
+                            <><span className="spinner-border spinner-border-sm me-1"></span>Accepting...</>
+                          ) : (
+                            '✅ Accept'
+                          )}
+                        </button>
+                      )}
+                      {order.order_status === 'ACCEPTED' && (
+                        <button className="btn btn-sm btn-success" onClick={() => onDispatch(order)}>
+                          🚛 Dispatch
+                        </button>
+                      )}
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function DispatchedDealersModal({ orders, onSelectDealer, onClose }) {
+  const dispatchedOrders = orders.filter(o => o.order_status === 'DISPATCHED');
+  const dealerMap = {};
+
+  dispatchedOrders.forEach(o => {
+    if (!dealerMap[o.dealer_id]) {
+      dealerMap[o.dealer_id] = {
+        dealer_id: o.dealer_id,
+        dealer_name: o.dealer_name,
+        dealer_login_name: o.dealer_login_name,
+        dealer_company_name: o.dealer_company_name,
+        count: 0,
+      };
+    }
+    dealerMap[o.dealer_id].count++;
+  });
+
+  const dealers = Object.values(dealerMap).sort((a, b) => b.count - a.count);
+
+  return (
+    <div className="modal d-block" tabIndex="-1" style={{ background: 'rgba(0,0,0,0.55)' }}>
+      <div className="modal-dialog modal-dialog-centered">
+        <div className="modal-content">
+          <div className="modal-header" style={{ background: '#198754', color: '#fff' }}>
+            <h5 className="modal-title">🚛 Dealers with Dispatched Orders</h5>
+            <button type="button" className="btn-close btn-close-white" onClick={onClose}></button>
+          </div>
+          <div className="modal-body">
+            {dealers.length === 0 ? (
+              <p className="text-muted text-center py-3">No dispatched orders</p>
+            ) : (
+              <div className="list-group">
+                {dealers.map(dealer => (
+                  <button
+                    key={dealer.dealer_id}
+                    type="button"
+                    className="list-group-item list-group-item-action"
+                    onClick={() => onSelectDealer(dealer.dealer_id)}
+                  >
+                    <div className="d-flex justify-content-between align-items-start">
+                      <div className="text-start">
+                        <div className="fw-semibold">{dealer.dealer_login_name || dealer.dealer_company_name || dealer.dealer_name}</div>
+                        {dealer.dealer_company_name && dealer.dealer_login_name && dealer.dealer_company_name !== dealer.dealer_login_name && (
+                          <small className="text-muted">{dealer.dealer_company_name}</small>
+                        )}
+                      </div>
+                      <span className="badge bg-success">{dealer.count}</span>
+                    </div>
+                  </button>
+                ))}
+              </div>
+            )}
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function DealerDispatchedOrdersModal({ orders, dealerId, onClose, onBack, onView }) {
+  const dispatchedOrders = orders
+    .filter(o => o.dealer_id === dealerId && o.order_status === 'DISPATCHED')
+    .sort((a, b) => new Date(b.dispatch_created_at) - new Date(a.dispatch_created_at));
+
+  const dealerName = dispatchedOrders[0]?.dealer_login_name || dispatchedOrders[0]?.dealer_company_name || dispatchedOrders[0]?.dealer_name || `Dealer #${dealerId}`;
+
+  return (
+    <div className="modal d-block" tabIndex="-1" style={{ background: 'rgba(0,0,0,0.55)' }}>
+      <div className="modal-dialog modal-dialog-centered modal-lg">
+        <div className="modal-content">
+          <div className="modal-header d-flex align-items-center justify-content-between" style={{ background: '#198754', color: '#fff' }}>
+            <div className="d-flex align-items-center gap-2">
+              {onBack && (
+                <button type="button" className="btn btn-sm btn-light" onClick={onBack} title="Go back to dealers">
+                  ← Back
+                </button>
+              )}
+              <h5 className="modal-title mb-0">🚛 Dispatched Orders — {dealerName}</h5>
+            </div>
+            <button type="button" className="btn-close btn-close-white" onClick={onClose}></button>
+          </div>
+          <div className="modal-body" style={{ maxHeight: '70vh', overflowY: 'auto' }}>
+            {dispatchedOrders.length === 0 ? (
+              <p className="text-muted text-center py-3">No dispatched orders</p>
+            ) : (
+              <div className="list-group">
+                {dispatchedOrders.map(order => (
+                  <div key={order.order_id} className="list-group-item" style={{ padding: '1rem' }}>
+                    <div className="d-flex justify-content-between align-items-start mb-2">
+                      <div>
+                        <div className="fw-semibold">Order #{order.order_id}</div>
+                        <small className="text-muted">Dispatched: {fmt(order.dispatch_created_at)}</small>
+                      </div>
+                      <StatusBadge status={order.order_status} />
+                    </div>
+                    <div className="row g-2 small mb-3">
+                      <div className="col-6 col-sm-2">
+                        <div className="text-muted">Vehicle</div>
+                        <div className="fw-semibold">{order.dispatch_vehicle_number || '—'}</div>
+                      </div>
+                      <div className="col-6 col-sm-2">
+                        <div className="text-muted">Driver</div>
+                        <div className="fw-semibold">
+                          {order.dispatch_driver_phone ? (
+                            <a href={`tel:${order.dispatch_driver_phone}`} title={order.dispatch_driver_name || 'Call driver'}>
+                              📞 {order.dispatch_driver_phone}
+                            </a>
+                          ) : (
+                            order.dispatch_driver_name || '—'
+                          )}
+                        </div>
+                      </div>
+                      <div className="col-6 col-sm-3">
+                        <div className="text-muted">Product</div>
+                        <div className="fw-semibold">{parseItems(order)[0]?.product_name || '—'}</div>
+                      </div>
+                      <div className="col-6 col-sm-2">
+                        <div className="text-muted">Qty (MT)</div>
+                        <div className="fw-semibold">{(() => {
+                          const items = parseItems(order);
+                          const total = items.reduce((s, i) => s + parseFloat(i.order_quantity || 0), 0);
+                          return total > 0 ? total.toFixed(3) : order.order_quantity || '—';
+                        })()}</div>
+                      </div>
+                      <div className="col-6 col-sm-3">
+                        <div className="text-muted">Bilty No.</div>
+                        <div className="fw-semibold">{order.bilty_number || '—'}</div>
+                      </div>
+                    </div>
+                    {/* Action buttons */}
+                    <div className="d-flex gap-2 flex-wrap" style={{ marginTop: '0.75rem' }}>
+                      {onView && (
+                        <button className="btn btn-sm btn-outline-primary" onClick={() => onView(order)}>
+                          👁️ View
+                        </button>
+                      )}
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function OrderRow({ order, onAccept, onDispatch, onView, isOrderOverdue }) {
   const [accepting, setAccepting] = useState(false);
 
   const handleAccept = async () => {
@@ -679,8 +1012,15 @@ function OrderRow({ order, onAccept, onDispatch, onView }) {
   };
 
   return (
-    <tr>
-      <td className="fw-semibold text-nowrap">#{order.order_id}</td>
+    <tr style={{ backgroundColor: isOrderOverdue(order) ? '#fff3cd' : 'transparent' }}>
+      <td className="fw-semibold text-nowrap">
+        #{order.order_id}
+        {isOrderOverdue(order) && (
+          <span title="Order is 3+ days old and not dispatched" style={{ color: '#dc3545', marginLeft: '0.5rem' }}>
+            ⚠️
+          </span>
+        )}
+      </td>
       <td className="text-nowrap" style={{ fontSize: '.8rem' }}>{fmt(order.order_date)}</td>
       <td><ItemsCell order={order} /></td>
       <td className="text-nowrap"><QtyCell order={order} /></td>
@@ -695,6 +1035,13 @@ function OrderRow({ order, onAccept, onDispatch, onView }) {
       </td>
       <td className="d-none d-xl-table-cell">{order.load_type_desc || order.load_type_code || '—'}</td>
       <td className="d-none d-xl-table-cell">{order.preferred_location_desc || order.preferred_location_code || '—'}</td>
+      <td className="d-none d-lg-table-cell text-nowrap">
+        {order.actual_location_desc || order.actual_loading_location_code ? (
+          <span className="badge bg-success">{order.actual_location_desc || order.actual_loading_location_code}</span>
+        ) : (
+          <span className="text-muted small">—</span>
+        )}
+      </td>
       <td><StatusBadge status={order.order_status} /></td>
       <td className="text-nowrap">
         <button className="btn btn-sm btn-outline-primary me-1" onClick={() => onView(order)}>
@@ -728,7 +1075,284 @@ function OrderRow({ order, onAccept, onDispatch, onView }) {
   );
 }
 
-function DealerGroup({ orders, onAccept, onDispatch, onView }) {
+// Modals for Overdue Orders
+function OverdueDealersModal({ orders, onSelectDealer, onClose, isOrderOverdue }) {
+  const overdueOrders = orders.filter(isOrderOverdue);
+  const dealerMap = {};
+  overdueOrders.forEach(o => {
+    if (!dealerMap[o.dealer_id]) {
+      dealerMap[o.dealer_id] = { dealer_id: o.dealer_id, dealer_name: o.dealer_name, count: 0 };
+    }
+    dealerMap[o.dealer_id].count++;
+  });
+  const dealers = Object.values(dealerMap).sort((a, b) => b.count - a.count);
+
+  return (
+    <div className="modal d-block" tabIndex="-1" style={{ background: 'rgba(0,0,0,0.55)' }}>
+      <div className="modal-dialog modal-dialog-centered">
+        <div className="modal-content">
+          <div className="modal-header" style={{ background: '#dc3545', color: '#fff' }}>
+            <h5 className="modal-title">⚠️ Overdue Orders by Dealer</h5>
+            <button type="button" className="btn-close" style={{filter: 'brightness(0) invert(1)'}} onClick={onClose}></button>
+          </div>
+          <div className="modal-body" style={{ maxHeight: '70vh', overflowY: 'auto' }}>
+            {dealers.length === 0 ? (
+              <p className="text-muted text-center py-3">No overdue orders</p>
+            ) : (
+              <div className="list-group">
+                {dealers.map(dealer => (
+                  <button key={dealer.dealer_id} type="button" className="list-group-item list-group-item-action"
+                    onClick={() => onSelectDealer(dealer.dealer_id)}>
+                    <div className="d-flex justify-content-between align-items-start">
+                      <div className="text-start">
+                        <div className="fw-semibold">{dealer.dealer_name}</div>
+                      </div>
+                      <span className="badge bg-danger">{dealer.count}</span>
+                    </div>
+                  </button>
+                ))}
+              </div>
+            )}
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function OverdueOrdersModal({ orders, dealerId, onClose, onBack, onView, onAccept, onDispatch, isOrderOverdue }) {
+  const overdueOrders = orders.filter(o => o.dealer_id === dealerId && isOrderOverdue(o));
+  const dealerName = overdueOrders[0]?.dealer_name || `Dealer #${dealerId}`;
+
+  return (
+    <div className="modal d-block" tabIndex="-1" style={{ background: 'rgba(0,0,0,0.55)' }}>
+      <div className="modal-dialog modal-dialog-centered modal-lg">
+        <div className="modal-content">
+          <div className="modal-header d-flex align-items-center gap-2" style={{ background: '#dc3545', color: '#fff' }}>
+            {onBack && (
+              <button type="button" className="btn btn-sm btn-light" onClick={onBack}>← Back</button>
+            )}
+            <h5 className="modal-title mb-0">⚠️ Overdue Orders — {dealerName}</h5>
+            <button type="button" className="btn-close ms-auto" style={{filter: 'brightness(0) invert(1)'}} onClick={onClose}></button>
+          </div>
+          <div className="modal-body" style={{ maxHeight: '70vh', overflowY: 'auto' }}>
+            {overdueOrders.length === 0 ? (
+              <p className="text-muted text-center py-3">No overdue orders</p>
+            ) : (
+              <div className="space-y-3">
+                {overdueOrders.map(o => (
+                  <div key={o.order_id} className="border rounded p-3" style={{ background: '#fff3cd', borderLeft: '4px solid #dc3545' }}>
+                    <div className="d-flex justify-content-between align-items-start mb-2">
+                      <div>
+                        <div className="fw-semibold">Order #{o.order_id}</div>
+                        <small className="text-muted">{fmt(o.order_date)}</small>
+                      </div>
+                      <StatusBadge status={o.order_status} />
+                    </div>
+                    <div className="row g-2 small mb-2">
+                      <div className="col-6">
+                        <div className="text-muted">Product</div>
+                        <div>{o.product_name || '—'}</div>
+                      </div>
+                      <div className="col-6">
+                        <div className="text-muted">Party</div>
+                        <div>{o.party_name_col || '—'}</div>
+                      </div>
+                    </div>
+                    <div className="d-flex gap-2 flex-wrap">
+                      <button className="btn btn-sm btn-outline-primary" onClick={() => onView(o)}>👁️ View</button>
+                      {o.order_status === 'ORDER_PLACED' && (
+                        <button className="btn btn-sm btn-outline-info" onClick={() => onAccept(o.order_id)}>✅ Accept</button>
+                      )}
+                      {o.order_status === 'ACCEPTED' && (
+                        <button className="btn btn-sm btn-success" onClick={() => onDispatch(o)}>🚛 Dispatch</button>
+                      )}
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// Modals for Total Orders
+function TotalDealersModal({ dealerMap, onSelectDealer, onClose }) {
+  const dealers = Object.values(dealerMap).sort((a, b) => b.total - a.total);
+
+  return (
+    <div className="modal d-block" tabIndex="-1" style={{ background: 'rgba(0,0,0,0.55)' }}>
+      <div className="modal-dialog modal-dialog-centered">
+        <div className="modal-content">
+          <div className="modal-header" style={{ background: '#0d6efd', color: '#fff' }}>
+            <h5 className="modal-title">📊 Dealers (Last 3 Days)</h5>
+            <button type="button" className="btn-close" style={{filter: 'brightness(0) invert(1)'}} onClick={onClose}></button>
+          </div>
+          <div className="modal-body" style={{ maxHeight: '70vh', overflowY: 'auto' }}>
+            {dealers.length === 0 ? (
+              <p className="text-muted text-center py-3">No dealers</p>
+            ) : (
+              <div className="list-group">
+                {dealers.map(dealer => (
+                  <button key={dealer.dealer_id} type="button" className="list-group-item list-group-item-action"
+                    onClick={() => onSelectDealer(dealer.dealer_id)}>
+                    <div className="d-flex justify-content-between align-items-start">
+                      <div className="text-start">
+                        <div className="fw-semibold">{dealer.dealer_login_name || dealer.dealer_company_name || dealer.dealer_name}</div>
+                        {dealer.dealer_company_name && dealer.dealer_login_name && dealer.dealer_company_name !== dealer.dealer_login_name && (
+                          <small className="text-muted">{dealer.dealer_company_name}</small>
+                        )}
+                      </div>
+                      <span className="badge bg-info">{dealer.total}</span>
+                    </div>
+                  </button>
+                ))}
+              </div>
+            )}
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function TotalOrdersListModal({ orders, onClose, onView, onAccept, onDispatch }) {
+  const filteredOrders = orders;
+
+  return (
+    <div className="modal d-block" tabIndex="-1" style={{ background: 'rgba(0,0,0,0.55)' }}>
+      <div className="modal-dialog modal-dialog-centered modal-lg">
+        <div className="modal-content">
+          <div className="modal-header" style={{ background: '#0d6efd', color: '#fff' }}>
+            <h5 className="modal-title mb-0">📋 All Orders (Last 3 Days)</h5>
+            <button type="button" className="btn-close ms-auto" style={{filter: 'brightness(0) invert(1)'}} onClick={onClose}></button>
+          </div>
+          <div className="modal-body" style={{ maxHeight: '70vh', overflowY: 'auto' }}>
+            {filteredOrders.length === 0 ? (
+              <p className="text-muted text-center py-3">No orders found</p>
+            ) : (
+              <div className="space-y-3">
+                {filteredOrders.map(o => (
+                  <div key={o.order_id} className="border rounded p-3" style={{ background: '#f8f9fa' }}>
+                    <div className="d-flex justify-content-between align-items-start mb-2">
+                      <div>
+                        <div className="fw-semibold">Order #{o.order_id} — {o.dealer_name}</div>
+                        <small className="text-muted">{fmt(o.order_date)}</small>
+                      </div>
+                      <StatusBadge status={o.order_status} />
+                    </div>
+                    <div className="row g-2 small mb-2">
+                      <div className="col-6">
+                        <div className="text-muted">Product</div>
+                        <div>{o.product_name || '—'}</div>
+                      </div>
+                      <div className="col-6">
+                        <div className="text-muted">Party</div>
+                        <div>{o.party_name_col || '—'}</div>
+                      </div>
+                    </div>
+                    <div className="d-flex gap-2 flex-wrap">
+                      <button className="btn btn-sm btn-outline-primary" onClick={() => onView(o)}>👁️ View</button>
+                      {o.order_status === 'ORDER_PLACED' && (
+                        <button className="btn btn-sm btn-outline-info" onClick={() => onAccept(o.order_id)}>✅ Accept</button>
+                      )}
+                      {o.order_status === 'ACCEPTED' && (
+                        <button className="btn btn-sm btn-success" onClick={() => onDispatch(o)}>🚛 Dispatch</button>
+                      )}
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function TotalDealerOrdersModal({ orders, dealerId, onClose, onBack, onView, onAccept, onDispatch }) {
+  const dealerOrders = orders.filter(o => o.dealer_id === dealerId);
+  const dealerName = dealerOrders[0]?.dealer_login_name || dealerOrders[0]?.dealer_company_name || dealerOrders[0]?.dealer_name || `Dealer #${dealerId}`;
+
+  return (
+    <div className="modal d-block" tabIndex="-1" style={{ background: 'rgba(0,0,0,0.55)' }}>
+      <div className="modal-dialog modal-dialog-centered modal-lg">
+        <div className="modal-content">
+          <div className="modal-header d-flex align-items-center gap-2" style={{ background: '#0d6efd', color: '#fff' }}>
+            {onBack && (
+              <button type="button" className="btn btn-sm btn-light" onClick={onBack}>← Back</button>
+            )}
+            <h5 className="modal-title mb-0">📊 {dealerName}</h5>
+            <button type="button" className="btn-close ms-auto" style={{filter: 'brightness(0) invert(1)'}} onClick={onClose}></button>
+          </div>
+          <div className="modal-body" style={{ maxHeight: '70vh', overflowY: 'auto' }}>
+            {dealerOrders.length === 0 ? (
+              <p className="text-muted text-center py-3">No orders for this dealer</p>
+            ) : (
+              <div className="space-y-3">
+                {dealerOrders.map(order => (
+                  <div key={order.order_id} className="border rounded p-3" style={{ background: '#f8f9fa' }}>
+                    <div className="d-flex justify-content-between align-items-start mb-2">
+                      <div>
+                        <div className="fw-semibold">Order #{order.order_id}</div>
+                        <small className="text-muted">{fmt(order.order_date)}</small>
+                      </div>
+                      <StatusBadge status={order.order_status} />
+                    </div>
+                    <div className="row g-2 small mb-3">
+                      <div className="col-6 col-sm-3">
+                        <div className="text-muted">Product</div>
+                        <div className="fw-semibold">{parseItems(order)[0]?.product_name || '—'}</div>
+                      </div>
+                      <div className="col-6 col-sm-3">
+                        <div className="text-muted">Qty (MT)</div>
+                        <div className="fw-semibold">{(() => {
+                          const items = parseItems(order);
+                          const total = items.reduce((s, i) => s + parseFloat(i.order_quantity || 0), 0);
+                          return total > 0 ? total.toFixed(3) : order.order_quantity || '—';
+                        })()}</div>
+                      </div>
+                      <div className="col-6 col-sm-3">
+                        <div className="text-muted">Party</div>
+                        <div className="fw-semibold">{order.party_company_name || order.party_name_col || '—'}</div>
+                      </div>
+                      <div className="col-6 col-sm-3">
+                        <div className="text-muted">Load Type</div>
+                        <div className="fw-semibold">{order.load_type_desc || order.load_type_code || '—'}</div>
+                      </div>
+                    </div>
+                    {/* Action buttons */}
+                    <div className="d-flex gap-2 flex-wrap" style={{ marginTop: '0.75rem' }}>
+                      <button className="btn btn-sm btn-outline-primary" onClick={() => onView(order)}>
+                        👁️ View
+                      </button>
+                      {order.order_status === 'ORDER_PLACED' && (
+                        <button className="btn btn-sm btn-outline-info" onClick={() => onAccept(order.order_id)}>
+                          ✅ Accept
+                        </button>
+                      )}
+                      {order.order_status === 'ACCEPTED' && (
+                        <button className="btn btn-sm btn-success" onClick={() => onDispatch(order)}>
+                          🚛 Dispatch
+                        </button>
+                      )}
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function DealerGroup({ orders, onAccept, onDispatch, onView, isOrderOverdue }) {
   const [expanded, setExpanded] = useState(true);
 
   const placedCount    = orders.filter(o => o.order_status === 'ORDER_PLACED').length;
@@ -780,6 +1404,7 @@ function DealerGroup({ orders, onAccept, onDispatch, onView }) {
                   <th className="d-none d-md-table-cell">Contact</th>
                   <th className="d-none d-xl-table-cell">Load Type</th>
                   <th className="d-none d-xl-table-cell">Pref. Location</th>
+                  <th className="d-none d-lg-table-cell">Actual Location</th>
                   <th>Status</th>
                   <th>Action</th>
                 </tr>
@@ -792,6 +1417,7 @@ function DealerGroup({ orders, onAccept, onDispatch, onView }) {
                     onAccept={onAccept}
                     onDispatch={onDispatch}
                     onView={onView}
+                    isOrderOverdue={isOrderOverdue}
                   />
                 ))}
               </tbody>
@@ -804,19 +1430,81 @@ function DealerGroup({ orders, onAccept, onDispatch, onView }) {
 }
 
 function App() {
+  const getDefaultDates = () => {
+    const end = new Date();
+    const start = new Date();
+    start.setDate(start.getDate() - 3); // Last 3 days
+    return {
+      start: start.toISOString().slice(0, 10),
+      end: end.toISOString().slice(0, 10),
+    };
+  };
+  const defaults = getDefaultDates();
+
   const [orders,          setOrders]          = useState([]);
   const [loading,         setLoading]         = useState(true);
-  const [showOnHold,      setShowOnHold]      = useState(false);
-  const [showDispatched,  setShowDispatched]  = useState(false);
+  const [showOnHold,      setShowOnHold]      = useState(true);
+  const [showDispatched,  setShowDispatched]  = useState(true);
   const [dispatchModal,   setDispatchModal]   = useState(null);
   const [viewOrder,       setViewOrder]       = useState(null);
   const [loadingLocs,     setLoadingLocs]     = useState([]);
   const [toast,           setToast]           = useState(null);
   const [refreshing,      setRefreshing]      = useState(false);
+  const [showPendingDealers, setShowPendingDealers] = useState(false);
+  const [selectedDealerId, setSelectedDealerId] = useState(null);
+  const [showDispatchedDealers, setShowDispatchedDealers] = useState(false);
+  const [selectedDispatchedDealerId, setSelectedDispatchedDealerId] = useState(null);
+  const [startDate,       setStartDate]       = useState(defaults.start);
+  const [endDate,         setEndDate]         = useState(defaults.end);
+  const [showOverdueDealers, setShowOverdueDealers] = useState(false);
+  const [selectedOverdueDealerId, setSelectedOverdueDealerId] = useState(null);
+  const [showTotalDealers, setShowTotalDealers] = useState(false);
+  const [selectedTotalDealerId, setSelectedTotalDealerId] = useState(null);
+  const [showTotalOrdersList, setShowTotalOrdersList] = useState(false);
+  const [allOverdueOrders, setAllOverdueOrders] = useState([]);
   const esRef = useRef(null);
   const retryRef = useRef(null);
 
   const notify = (msg, type = 'success') => setToast({ msg, type });
+
+  const isOrderOverdue = (order) => {
+    if (order.order_status === 'DISPATCHED') return false; // Not overdue if dispatched
+    const orderDate = new Date(order.order_date);
+    const now = new Date();
+    const daysDiff = Math.floor((now - orderDate) / (1000 * 60 * 60 * 24));
+    return daysDiff > 3; // Overdue if older than 3 days
+  };
+
+  const overdueCounts = {
+    total: allOverdueOrders.length,
+    byDealer: {}
+  };
+  allOverdueOrders.forEach(o => {
+    if (!overdueCounts.byDealer[o.dealer_id]) {
+      overdueCounts.byDealer[o.dealer_id] = { dealer_id: o.dealer_id, dealer_name: o.dealer_name, count: 0 };
+    }
+    overdueCounts.byDealer[o.dealer_id].count++;
+  });
+
+  const totalDealerCounts = {
+    total: new Set(orders.map(o => o.dealer_id)).size,
+    byStatus: {}
+  };
+  const dealerMap = {};
+  orders.forEach(o => {
+    if (!dealerMap[o.dealer_id]) {
+      dealerMap[o.dealer_id] = {
+        dealer_id: o.dealer_id,
+        dealer_name: o.dealer_name,
+        dealer_login_name: o.dealer_login_name,
+        dealer_company_name: o.dealer_company_name,
+        total: 0,
+        byStatus: { ORDER_PLACED: 0, ACCEPTED: 0, DISPATCHED: 0, ON_HOLD: 0 }
+      };
+    }
+    dealerMap[o.dealer_id].byStatus[o.order_status] = (dealerMap[o.dealer_id].byStatus[o.order_status] || 0) + 1;
+    dealerMap[o.dealer_id].total++;
+  });
 
   const fetchOrders = useCallback(async () => {
     setLoading(true);
@@ -824,16 +1512,40 @@ function App() {
     if (showOnHold)     statuses.push('ON_HOLD');
     if (showDispatched) statuses.push('DISPATCHED');
     try {
-      const r    = await fetch(`/api/dispatcher/orders?statuses=${statuses.join(',')}`);
+      const params = new URLSearchParams();
+      params.set('statuses', statuses.join(','));
+      if (startDate) params.set('startDate', startDate);
+      if (endDate) params.set('endDate', endDate);
+      const r    = await fetch(`/api/dispatcher/orders?${params.toString()}`);
       const data = await r.json();
       setOrders(Array.isArray(data) ? data : []);
     } catch {
       notify('Failed to load orders', 'error');
     }
     setLoading(false);
-  }, [showOnHold, showDispatched]);
+  }, [showOnHold, showDispatched, startDate, endDate]);
 
   useEffect(() => { fetchOrders(); }, [fetchOrders]);
+
+  // Fetch ALL overdue orders (ignoring date filter)
+  useEffect(() => {
+    const fetchAllOverdue = async () => {
+      try {
+        const statuses = ['ORDER_PLACED', 'ACCEPTED', 'ON_HOLD'];
+        const params = new URLSearchParams();
+        params.set('statuses', statuses.join(','));
+        // No startDate/endDate params - fetch all
+        const r = await fetch(`/api/dispatcher/orders?${params.toString()}`);
+        const data = await r.json();
+        if (Array.isArray(data)) {
+          setAllOverdueOrders(data.filter(isOrderOverdue));
+        }
+      } catch (e) {
+        console.error('Failed to fetch overdue orders:', e);
+      }
+    };
+    fetchAllOverdue();
+  }, []);
 
   useEffect(() => {
     fetch('/api/codes/loading_location')
@@ -895,8 +1607,8 @@ function App() {
     dealerGroups[o.dealer_id].push(o);
   });
 
-  const totalPlaced    = orders.filter(o => o.order_status === 'ORDER_PLACED').length;
-  const totalAccepted  = orders.filter(o => o.order_status === 'ACCEPTED').length;
+  const totalPending   = orders.filter(o => o.order_status === 'ORDER_PLACED' || o.order_status === 'ACCEPTED').length;
+  const totalDispatched = orders.filter(o => o.order_status === 'DISPATCHED').length;
   const totalDealers   = Object.keys(dealerGroups).length;
 
   return (
@@ -926,35 +1638,216 @@ function App() {
         <ViewOrderModal
           order={viewOrder}
           onClose={() => setViewOrder(null)}
+          onBack={(selectedDealerId || selectedDispatchedDealerId) ? () => setViewOrder(null) : undefined}
+        />
+      )}
+
+      {showPendingDealers && (
+        <PendingDealersModal
+          orders={orders}
+          onSelectDealer={dealerId => {
+            setSelectedDealerId(dealerId);
+            setShowPendingDealers(false);
+          }}
+          onClose={() => setShowPendingDealers(false)}
+        />
+      )}
+
+      {selectedDealerId && !viewOrder && (
+        <DealerOrdersModal
+          orders={orders}
+          dealerId={selectedDealerId}
+          onClose={() => setSelectedDealerId(null)}
+          onBack={() => {
+            setSelectedDealerId(null);
+            setShowPendingDealers(true);
+          }}
+          onAccept={handleAccept}
+          onDispatch={order => {
+            setDispatchModal(order);
+            setSelectedDealerId(null);
+          }}
+          onView={order => {
+            setViewOrder(order);
+          }}
+        />
+      )}
+
+      {showDispatchedDealers && (
+        <DispatchedDealersModal
+          orders={orders}
+          onSelectDealer={dealerId => {
+            setSelectedDispatchedDealerId(dealerId);
+            setShowDispatchedDealers(false);
+          }}
+          onClose={() => setShowDispatchedDealers(false)}
+        />
+      )}
+
+      {selectedDispatchedDealerId && !viewOrder && (
+        <DealerDispatchedOrdersModal
+          orders={orders}
+          dealerId={selectedDispatchedDealerId}
+          onClose={() => setSelectedDispatchedDealerId(null)}
+          onBack={() => {
+            setSelectedDispatchedDealerId(null);
+            setShowDispatchedDealers(true);
+          }}
+          onView={order => {
+            setViewOrder(order);
+          }}
+        />
+      )}
+
+      {/* Modal for Total Orders List */}
+      {showTotalOrdersList && (
+        <TotalOrdersListModal
+          orders={orders}
+          onClose={() => setShowTotalOrdersList(false)}
+          onView={order => {
+            setViewOrder(order);
+            setShowTotalOrdersList(false);
+          }}
+          onAccept={handleAccept}
+          onDispatch={order => {
+            setDispatchModal(order);
+            setShowTotalOrdersList(false);
+          }}
+        />
+      )}
+
+      {/* Modals for new cards */}
+      {showOverdueDealers && (
+        <OverdueDealersModal
+          orders={allOverdueOrders}
+          isOrderOverdue={isOrderOverdue}
+          onSelectDealer={dealerId => {
+            setSelectedOverdueDealerId(dealerId);
+            setShowOverdueDealers(false);
+          }}
+          onClose={() => setShowOverdueDealers(false)}
+        />
+      )}
+      {selectedOverdueDealerId && (
+        <OverdueOrdersModal
+          orders={allOverdueOrders}
+          dealerId={selectedOverdueDealerId}
+          isOrderOverdue={isOrderOverdue}
+          onClose={() => setSelectedOverdueDealerId(null)}
+          onBack={() => {
+            setSelectedOverdueDealerId(null);
+            setShowOverdueDealers(true);
+          }}
+          onView={order => {
+            setViewOrder(order);
+            setSelectedOverdueDealerId(null);
+          }}
+          onAccept={handleAccept}
+          onDispatch={order => {
+            setDispatchModal(order);
+            setSelectedOverdueDealerId(null);
+          }}
+        />
+      )}
+      {showTotalDealers && (
+        <TotalDealersModal
+          dealerMap={dealerMap}
+          onSelectDealer={dealerId => {
+            setSelectedTotalDealerId(dealerId);
+            setShowTotalDealers(false);
+          }}
+          onClose={() => setShowTotalDealers(false)}
+        />
+      )}
+      {selectedTotalDealerId && (
+        <TotalDealerOrdersModal
+          orders={orders}
+          dealerId={selectedTotalDealerId}
+          onClose={() => setSelectedTotalDealerId(null)}
+          onBack={() => {
+            setSelectedTotalDealerId(null);
+            setShowTotalDealers(true);
+          }}
+          onView={order => {
+            setViewOrder(order);
+            setSelectedTotalDealerId(null);
+          }}
+          onAccept={handleAccept}
+          onDispatch={order => {
+            setDispatchModal(order);
+            setSelectedTotalDealerId(null);
+          }}
         />
       )}
 
       {/* Stats */}
       <div className="row g-3 mb-4">
-        <div className="col-6 col-md-4">
-          <div className="card border-0 shadow-sm" style={{ borderLeft: '4px solid #fd7e14' }}>
+        <div className="col-6 col-md-3 col-lg-2">
+          <div
+            className={`card border-0 shadow-sm count-card ${orders.length === 0 ? 'disabled' : ''}`}
+            style={{ borderLeft: '4px solid #0d6efd' }}
+            title="Last 3 days Orders"
+            onClick={() => orders.length > 0 && setShowTotalDealers(true)}
+          >
             <div className="card-body d-flex align-items-center gap-3 py-3">
-              <span style={{ fontSize: '1.8rem' }}>🕐</span>
+              <span style={{ fontSize: '1.8rem' }}>📋</span>
               <div>
-                <div className="fs-4 fw-bold">{totalPlaced}</div>
-                <div className="text-muted small">Orders Placed</div>
+                <div className="fs-4 fw-bold">{orders.length}</div>
+                <div className="text-muted small">Total Orders</div>
               </div>
             </div>
           </div>
         </div>
-        <div className="col-6 col-md-4">
-          <div className="card border-0 shadow-sm" style={{ borderLeft: '4px solid #0dcaf0' }}>
+        <div className="col-6 col-md-3 col-lg-2">
+          <div
+            className={`card border-0 shadow-sm count-card ${overdueCounts.total === 0 ? 'disabled' : ''}`}
+            style={{ borderLeft: '4px solid #dc3545' }}
+            title="All Overdue orders from history"
+            onClick={() => overdueCounts.total > 0 && setShowOverdueDealers(true)}
+          >
             <div className="card-body d-flex align-items-center gap-3 py-3">
-              <span style={{ fontSize: '1.8rem' }}>✅</span>
+              <span style={{ fontSize: '1.8rem' }}>⚠️</span>
               <div>
-                <div className="fs-4 fw-bold">{totalAccepted}</div>
-                <div className="text-muted small">Accepted</div>
+                <div className="fs-4 fw-bold">{overdueCounts.total}</div>
+                <div className="text-muted small">Overdue Orders</div>
               </div>
             </div>
           </div>
         </div>
-        <div className="col-6 col-md-4">
-          <div className="card border-0 shadow-sm" style={{ borderLeft: '4px solid #6f42c1' }}>
+        <div className="col-6 col-md-3 col-lg-2">
+          <div
+            className={`card border-0 shadow-sm count-card ${totalPending === 0 ? 'disabled' : ''}`}
+            style={{ borderLeft: '4px solid #fd7e14' }}
+            title="Last 3 days Pending Orders"
+            onClick={() => totalPending > 0 && setShowPendingDealers(true)}
+          >
+            <div className="card-body d-flex align-items-center gap-3 py-3">
+              <span style={{ fontSize: '1.8rem' }}>⏳</span>
+              <div>
+                <div className="fs-4 fw-bold">{totalPending}</div>
+                <div className="text-muted small">Pending Orders</div>
+              </div>
+            </div>
+          </div>
+        </div>
+        <div className="col-6 col-md-3 col-lg-2">
+          <div
+            className={`card border-0 shadow-sm count-card ${totalDispatched === 0 ? 'disabled' : ''}`}
+            style={{ borderLeft: '4px solid #198754' }}
+            title="Last 3 days dispatched orders"
+            onClick={() => totalDispatched > 0 && setShowDispatchedDealers(true)}
+          >
+            <div className="card-body d-flex align-items-center gap-3 py-3">
+              <span style={{ fontSize: '1.8rem' }}>🚛</span>
+              <div>
+                <div className="fs-4 fw-bold">{totalDispatched}</div>
+                <div className="text-muted small">Dispatched Orders</div>
+              </div>
+            </div>
+          </div>
+        </div>
+        <div className="col-6 col-md-3 col-lg-2">
+          <div className="card border-0 shadow-sm" style={{ borderLeft: '4px solid #6f42c1' }} title="Last 3 days active dealers">
             <div className="card-body d-flex align-items-center gap-3 py-3">
               <span style={{ fontSize: '1.8rem' }}>🏬</span>
               <div>
@@ -969,6 +1862,14 @@ function App() {
       {/* Filters */}
       <div className="d-flex align-items-center gap-3 mb-4 flex-wrap p-3 bg-white rounded shadow-sm">
         <span className="fw-semibold text-muted small text-uppercase">Filters:</span>
+        <div className="d-flex gap-2 align-items-center">
+          <label className="small text-muted mb-0">From:</label>
+          <input type="date" className="form-control form-control-sm" style={{width: '120px'}}
+            value={startDate} onChange={e => setStartDate(e.target.value)} />
+          <label className="small text-muted mb-0">To:</label>
+          <input type="date" className="form-control form-control-sm" style={{width: '120px'}}
+            value={endDate} onChange={e => setEndDate(e.target.value)} />
+        </div>
         <div className="form-check form-switch mb-0">
           <input className="form-check-input" type="checkbox" id="toggleOnHold"
             checked={showOnHold} onChange={e => setShowOnHold(e.target.checked)} />
@@ -1006,6 +1907,7 @@ function App() {
             onAccept={handleAccept}
             onDispatch={order => setDispatchModal(order)}
             onView={order => setViewOrder(order)}
+            isOrderOverdue={isOrderOverdue}
           />
         ))
       )}

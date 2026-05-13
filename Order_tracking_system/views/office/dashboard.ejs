@@ -11,6 +11,24 @@
 </nav>
 <div id="app-root"></div>
 
+<style>
+  .count-card {
+    cursor: pointer !important;
+    transition: all 0.2s ease !important;
+  }
+  .count-card:hover {
+    transform: translateY(-4px) !important;
+    box-shadow: 0 8px 16px rgba(0,0,0,0.15) !important;
+  }
+  .count-card.disabled {
+    cursor: default !important;
+  }
+  .count-card.disabled:hover {
+    transform: none !important;
+    box-shadow: 0 0.125rem 0.25rem rgba(0, 0, 0, 0.075) !important;
+  }
+</style>
+
 <script type="text/babel">
 const { useState, useEffect, useRef } = React;
 
@@ -42,6 +60,129 @@ function StatusBadge({ status }) {
     <span className="badge" style={{ background: cfg.bg, color: cfg.tc }}>
       {cfg.icon} {cfg.text}
     </span>
+  );
+}
+
+function StatusDealersModal({ orders, status, onSelectDealer, onClose }) {
+  const statusOrders = status === 'TOTAL' ? orders : orders.filter(o => o.order_status === status);
+  const dealerMap = {};
+
+  statusOrders.forEach(o => {
+    if (!dealerMap[o.dealer_id]) {
+      dealerMap[o.dealer_id] = {
+        dealer_id: o.dealer_id,
+        dealer_name: o.dealer_name,
+        count: 0,
+      };
+    }
+    dealerMap[o.dealer_id].count++;
+  });
+
+  const dealers = Object.values(dealerMap).sort((a, b) => b.count - a.count);
+  const statusConfig = STATUS_CONFIG[status] || { text: status, bg: '#6c757d', icon: '📊' };
+
+  return (
+    <div className="modal d-block" tabIndex="-1" style={{ background: 'rgba(0,0,0,0.55)' }}>
+      <div className="modal-dialog modal-dialog-centered">
+        <div className="modal-content">
+          <div className="modal-header" style={{ background: statusConfig.bg, color: statusConfig.tc }}>
+            <h5 className="modal-title">{statusConfig.icon} {statusConfig.text || 'Total'} Orders by Dealer</h5>
+            <button type="button" className="btn-close" style={{filter: 'brightness(0) invert(1)'}} onClick={onClose}></button>
+          </div>
+          <div className="modal-body" style={{ maxHeight: '70vh', overflowY: 'auto' }}>
+            {dealers.length === 0 ? (
+              <p className="text-muted text-center py-3">No orders found</p>
+            ) : (
+              <div className="list-group">
+                {dealers.map(dealer => (
+                  <button
+                    key={dealer.dealer_id}
+                    type="button"
+                    className="list-group-item list-group-item-action"
+                    onClick={() => onSelectDealer(dealer.dealer_id)}
+                  >
+                    <div className="d-flex justify-content-between align-items-start">
+                      <div className="text-start">
+                        <div className="fw-semibold">{dealer.dealer_name}</div>
+                      </div>
+                      <span className="badge bg-info">{dealer.count}</span>
+                    </div>
+                  </button>
+                ))}
+              </div>
+            )}
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function StatusOrdersModal({ orders, status, dealerId, onClose, onBack, onViewOrder, onHold }) {
+  const statusOrders = status === 'TOTAL'
+    ? orders.filter(o => o.dealer_id === dealerId)
+    : orders.filter(o => o.dealer_id === dealerId && o.order_status === status);
+
+  const dealerName = statusOrders[0]?.dealer_name || `Dealer #${dealerId}`;
+  const statusConfig = STATUS_CONFIG[status] || { text: status, bg: '#6c757d', icon: '📊' };
+
+  return (
+    <div className="modal d-block" tabIndex="-1" style={{ background: 'rgba(0,0,0,0.55)' }}>
+      <div className="modal-dialog modal-dialog-centered modal-lg">
+        <div className="modal-content">
+          <div className="modal-header d-flex align-items-center justify-content-between" style={{ background: statusConfig.bg, color: statusConfig.tc }}>
+            <div className="d-flex align-items-center gap-2">
+              {onBack && (
+                <button type="button" className="btn btn-sm btn-light" onClick={onBack} title="Go back to dealers">
+                  ← Back
+                </button>
+              )}
+              <h5 className="modal-title mb-0">{statusConfig.icon} {statusConfig.text || 'Total'} — {dealerName}</h5>
+            </div>
+            <button type="button" className="btn-close" style={{filter: 'brightness(0) invert(1)'}} onClick={onClose}></button>
+          </div>
+          <div className="modal-body" style={{ maxHeight: '70vh', overflowY: 'auto' }}>
+            {statusOrders.length === 0 ? (
+              <p className="text-muted text-center py-3">No orders found</p>
+            ) : (
+              <div className="space-y-3">
+                {statusOrders.map(o => (
+                  <div key={o.order_id} className="border rounded p-3" style={{ background: '#f8f9fa' }}>
+                    <div className="d-flex justify-content-between align-items-start mb-2">
+                      <div>
+                        <div className="fw-semibold">Order #{o.order_id}</div>
+                        <small className="text-muted">{formatDateTime(o.order_date)}</small>
+                      </div>
+                      <StatusBadge status={o.order_status} />
+                    </div>
+                    <div className="row g-2 small mb-2">
+                      <div className="col-6">
+                        <div className="text-muted">Product</div>
+                        <div>{o.product_name || '—'}</div>
+                      </div>
+                      <div className="col-6">
+                        <div className="text-muted">Party</div>
+                        <div>{o.party_name || '—'}</div>
+                      </div>
+                    </div>
+                    <div className="d-flex gap-2 flex-wrap">
+                      <button className="btn btn-sm btn-outline-primary" onClick={() => onViewOrder(o)}>
+                        👁️ View
+                      </button>
+                      {(o.order_status === 'ORDER_PLACED' || o.order_status === 'ACCEPTED') && (
+                        <button className="btn btn-sm btn-outline-warning" onClick={() => onHold(o)}>
+                          ⏸️ Hold
+                        </button>
+                      )}
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+        </div>
+      </div>
+    </div>
   );
 }
 
@@ -112,6 +253,12 @@ function App() {
   const [refreshing, setRefreshing] = useState(false);
   const esRef = useRef(null);
   const retryRef = useRef(null);
+
+  const [selectedStatusFilter, setSelectedStatusFilter] = useState(null);
+  const [showStatusDealers, setShowStatusDealers] = useState(false);
+  const [selectedStatusDealerId, setSelectedStatusDealerId] = useState(null);
+  const [selectedOrderDetail, setSelectedOrderDetail] = useState(null);
+  const [showDetailModal, setShowDetailModal] = useState(false);
 
   const notify = (msg, type = 'success') => {
     setToast({ msg, type });
@@ -188,6 +335,7 @@ function App() {
     total: orders.length,
     orderPlaced: orders.filter(o => o.order_status === 'ORDER_PLACED').length,
     onHold: orders.filter(o => o.order_status === 'ON_HOLD').length,
+    dispatched: orders.filter(o => o.order_status === 'DISPATCHED').length,
   };
 
   return (
@@ -209,10 +357,56 @@ function App() {
         </div>
       )}
 
-      {/* Summary Cards */}
+      {/* Status Dealers Modal */}
+      {showStatusDealers && selectedStatusFilter && (
+        <StatusDealersModal
+          orders={orders}
+          status={selectedStatusFilter}
+          onSelectDealer={dealerId => {
+            setSelectedStatusDealerId(dealerId);
+            setShowStatusDealers(false);
+          }}
+          onClose={() => setShowStatusDealers(false)}
+        />
+      )}
+
+      {/* Status Orders Modal */}
+      {selectedStatusDealerId && selectedStatusFilter && (
+        <StatusOrdersModal
+          orders={orders}
+          status={selectedStatusFilter}
+          dealerId={selectedStatusDealerId}
+          onClose={() => setSelectedStatusDealerId(null)}
+          onBack={() => {
+            setSelectedStatusDealerId(null);
+            setShowStatusDealers(true);
+          }}
+          onViewOrder={order => {
+            setSelectedOrderDetail(order);
+            setShowDetailModal(true);
+            setSelectedStatusDealerId(null);
+          }}
+          onHold={order => {
+            setHoldOrder(order);
+            setSelectedStatusDealerId(null);
+          }}
+        />
+      )}
+
+      {/* Summary Cards - Clickable */}
       <div className="row mb-3">
         <div className="col-6 col-md-3 mb-3">
-          <div className="card border-0 shadow-sm h-100" style={{ borderLeft: '4px solid #0d6efd' }}>
+          <div
+            className={`card border-0 shadow-sm h-100 count-card ${counts.total === 0 ? 'disabled' : ''}`}
+            style={{ borderLeft: '4px solid #0d6efd' }}
+            onClick={() => {
+              console.log('Total card clicked, counts.total:', counts.total, 'orders length:', orders.length);
+              if (counts.total > 0) {
+                setSelectedStatusFilter('TOTAL');
+                setShowStatusDealers(true);
+              }
+            }}
+          >
             <div className="card-body d-flex align-items-center gap-3 py-3">
               <div style={{ fontSize: '2rem' }}>📋</div>
               <div>
@@ -223,7 +417,11 @@ function App() {
           </div>
         </div>
         <div className="col-6 col-md-3 mb-3">
-          <div className="card border-0 shadow-sm h-100" style={{ borderLeft: '4px solid #fd7e14' }}>
+          <div
+            className={`card border-0 shadow-sm h-100 count-card ${counts.orderPlaced === 0 ? 'disabled' : ''}`}
+            style={{ borderLeft: '4px solid #fd7e14' }}
+            onClick={() => { if (counts.orderPlaced > 0) { setSelectedStatusFilter('ORDER_PLACED'); setShowStatusDealers(true); } }}
+          >
             <div className="card-body d-flex align-items-center gap-3 py-3">
               <div style={{ fontSize: '2rem' }}>🕐</div>
               <div>
@@ -234,12 +432,31 @@ function App() {
           </div>
         </div>
         <div className="col-6 col-md-3 mb-3">
-          <div className="card border-0 shadow-sm h-100" style={{ borderLeft: '4px solid #e57373' }}>
+          <div
+            className={`card border-0 shadow-sm h-100 count-card ${counts.onHold === 0 ? 'disabled' : ''}`}
+            style={{ borderLeft: '4px solid #e57373' }}
+            onClick={() => { if (counts.onHold > 0) { setSelectedStatusFilter('ON_HOLD'); setShowStatusDealers(true); } }}
+          >
             <div className="card-body d-flex align-items-center gap-3 py-3">
               <div style={{ fontSize: '2rem' }}>⏸️</div>
               <div>
                 <div className="fs-4 fw-bold">{counts.onHold}</div>
                 <div className="text-muted small">On Hold</div>
+              </div>
+            </div>
+          </div>
+        </div>
+        <div className="col-6 col-md-3 mb-3">
+          <div
+            className={`card border-0 shadow-sm h-100 count-card ${counts.dispatched === 0 ? 'disabled' : ''}`}
+            style={{ borderLeft: '4px solid #198754' }}
+            onClick={() => { if (counts.dispatched > 0) { setSelectedStatusFilter('DISPATCHED'); setShowStatusDealers(true); } }}
+          >
+            <div className="card-body d-flex align-items-center gap-3 py-3">
+              <div style={{ fontSize: '2rem' }}>🚛</div>
+              <div>
+                <div className="fs-4 fw-bold">{counts.dispatched}</div>
+                <div className="text-muted small">Dispatched</div>
               </div>
             </div>
           </div>
@@ -384,6 +601,121 @@ function App() {
       </div>
 
       {holdOrder && <OnHoldModal order={holdOrder} onConfirm={handleHold} onClose={() => setHoldOrder(null)} />}
+
+      {/* Order Detail Modal */}
+      {showDetailModal && selectedOrderDetail && (
+        <div style={{
+          position: 'fixed', top: 0, left: 0, right: 0, bottom: 0,
+          background: 'rgba(0,0,0,0.5)', zIndex: 10000,
+          display: 'flex', alignItems: 'center', justifyContent: 'center'
+        }}>
+          <div style={{
+            background: '#fff', borderRadius: 8, width: '95%', maxWidth: 800,
+            maxHeight: '90vh', overflowY: 'auto', padding: 24
+          }}>
+            <div className="d-flex justify-content-between align-items-center mb-3">
+              <div className="d-flex align-items-center gap-2">
+                {selectedStatusDealerId && (
+                  <button type="button" className="btn btn-sm btn-outline-secondary" onClick={() => setShowDetailModal(false)} title="Go back to orders list">
+                    ← Back
+                  </button>
+                )}
+                <h5 className="mb-0">📦 Order #{selectedOrderDetail.order_id} Details</h5>
+              </div>
+              <button type="button" className="btn-close" onClick={() => setShowDetailModal(false)}></button>
+            </div>
+
+            <div className="row g-3">
+              <div className="col-12">
+                <div className="card">
+                  <div className="card-header bg-light">
+                    <strong>Order Information</strong>
+                  </div>
+                  <div className="card-body">
+                    <div className="row g-2">
+                      <div className="col-md-6">
+                        <div><strong>Order ID:</strong> {selectedOrderDetail.order_id}</div>
+                        <div><strong>Date:</strong> {formatDateTime(selectedOrderDetail.order_date)}</div>
+                        <div><strong>Status:</strong> <StatusBadge status={selectedOrderDetail.order_status} /></div>
+                      </div>
+                      <div className="col-md-6">
+                        <div><strong>Dealer:</strong> {selectedOrderDetail.dealer_name}</div>
+                        <div><strong>Party:</strong> {selectedOrderDetail.party_name || '—'}</div>
+                        <div><strong>Quantity:</strong> {selectedOrderDetail.quantity} {selectedOrderDetail.unit}</div>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              {(selectedOrderDetail.order_status === 'DISPATCHED' || selectedOrderDetail.dispatch_vehicle_number || selectedOrderDetail.dispatch?.dispatch_vehicle_number) && (
+                <div className="col-12">
+                  <div className="card border-success">
+                    <div className="card-header bg-success text-white">
+                      <strong>🚛 Dispatch Details</strong>
+                    </div>
+                    <div className="card-body">
+                      <div className="row g-3">
+                        <div className="col-md-6">
+                          <div className="mb-2">
+                            <div className="text-muted small fw-semibold">Vehicle Number</div>
+                            <div className="fs-6 fw-bold">{selectedOrderDetail.dispatch_vehicle_number || selectedOrderDetail.dispatch?.dispatch_vehicle_number || '—'}</div>
+                          </div>
+                          <div className="mb-2">
+                            <div className="text-muted small fw-semibold">Driver Name</div>
+                            <div className="fw-semibold">{selectedOrderDetail.dispatch_driver_name || selectedOrderDetail.dispatch?.driver_name || '—'}</div>
+                          </div>
+                          <div className="mb-2">
+                            <div className="text-muted small fw-semibold">Driver Phone</div>
+                            <div>
+                              {(selectedOrderDetail.dispatch_driver_phone || selectedOrderDetail.dispatch?.driver_phone) ? (
+                                <a href={'tel:' + (selectedOrderDetail.dispatch_driver_phone || selectedOrderDetail.dispatch?.driver_phone)} className="btn btn-sm btn-outline-success">
+                                  📞 {selectedOrderDetail.dispatch_driver_phone || selectedOrderDetail.dispatch?.driver_phone}
+                                </a>
+                              ) : (
+                                <span className="text-muted">—</span>
+                              )}
+                            </div>
+                          </div>
+                        </div>
+                        <div className="col-md-6">
+                          <div className="mb-2">
+                            <div className="text-muted small fw-semibold">Bilty Number</div>
+                            <div className="fs-6 fw-bold">{selectedOrderDetail.bilty_number || selectedOrderDetail.dispatch?.bilty_number || '—'}</div>
+                          </div>
+                          <div className="mb-2">
+                            <div className="text-muted small fw-semibold">Actual Loading Location</div>
+                            <div className="fw-semibold">{selectedOrderDetail.actual_loading_location_code || selectedOrderDetail.dispatch?.actual_loading_location_code || selectedOrderDetail.actual_location_desc || '—'}</div>
+                          </div>
+                          <div className="mb-2">
+                            <div className="text-muted small fw-semibold">Dispatched At</div>
+                            <div>{selectedOrderDetail.dispatch_created_at ? formatDateTime(selectedOrderDetail.dispatch_created_at) : (selectedOrderDetail.dispatch?.created_at ? formatDateTime(selectedOrderDetail.dispatch.created_at) : '—')}</div>
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              )}
+
+              <div className="col-12 text-end">
+                {selectedStatusDealerId ? (
+                  <>
+                    <button className="btn btn-secondary me-2" onClick={() => setShowDetailModal(false)}>
+                      ← Back to Orders
+                    </button>
+                    <button className="btn btn-outline-secondary" onClick={() => { setShowDetailModal(false); setSelectedStatusDealerId(null); setShowStatusDealers(true); }}>
+                      ← Back to Dealers
+                    </button>
+                  </>
+                ) : (
+                  <button className="btn btn-secondary" onClick={() => setShowDetailModal(false)}>Close</button>
+                )}
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

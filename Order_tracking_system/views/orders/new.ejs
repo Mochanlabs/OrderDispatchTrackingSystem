@@ -95,15 +95,18 @@
           </div>
 
           <div class="col-md-6">
-            <label for="load_type_code" class="form-label fw-semibold">Loading Type</label>
+            <label for="load_type_code" class="form-label fw-semibold">Loading Type <span class="text-danger">*</span></label>
             <select id="load_type_code" class="form-select" required>
               <option value="">Loading…</option>
             </select>
           </div>
 
           <div class="col-md-6">
-            <label for="preferred_location_code" class="form-label fw-semibold">Preferred Loading Location</label>
-            <select id="preferred_location_code" class="form-select" required>
+            <label for="preferred_location_code" class="form-label fw-semibold">
+              Preferred Loading Location
+              <span id="location-required-mark" class="text-danger d-none">*</span>
+            </label>
+            <select id="preferred_location_code" class="form-select">
               <option value="">Loading…</option>
             </select>
           </div>
@@ -291,18 +294,46 @@
     } catch (e) { sel.innerHTML = '<option value="">Failed to load</option>'; }
   })();
 
-  // Self DOT Driver Section visibility
-  document.getElementById('load_type_code').addEventListener('change', function () {
-    const section = document.getElementById('dot-driver-section');
-    if (this.value === 'SLF_DOT') {
-      section.classList.remove('d-none');
+  // Self DOT Driver Section visibility & Preferred Location conditional validation
+  function updateLoadTypeValidation() {
+    const loadTypeSelect = document.getElementById('load_type_code');
+    const selectedCode = loadTypeSelect.value;
+    const selectedOption = loadTypeSelect.options[loadTypeSelect.selectedIndex];
+    const selectedDesc = selectedOption ? selectedOption.textContent : '';
+
+    const dotSection = document.getElementById('dot-driver-section');
+    const locationSelect = document.getElementById('preferred_location_code');
+    const locationRequiredMark = document.getElementById('location-required-mark');
+
+    // Show/hide Self DOT section
+    if (selectedCode === 'SLF_DOT') {
+      dotSection.classList.remove('d-none');
     } else {
-      section.classList.add('d-none');
+      dotSection.classList.add('d-none');
       document.getElementById('driver_name').value = '';
       document.getElementById('driver_phone').value = '';
       document.getElementById('vehicle_number').value = '';
     }
-  });
+
+    // Make Preferred Location mandatory/optional based on loading type
+    const isCompanyTransport = selectedDesc.toUpperCase().includes('COMPANY') && selectedDesc.toUpperCase().includes('TRANSPORT');
+
+    if (isCompanyTransport) {
+      // Company Transport - preferred location is optional
+      locationSelect.required = false;
+      locationRequiredMark.classList.add('d-none');
+    } else if (selectedCode) {
+      // Other loading types - preferred location is mandatory
+      locationSelect.required = true;
+      locationRequiredMark.classList.remove('d-none');
+    } else {
+      // No loading type selected - preferred location is optional
+      locationSelect.required = false;
+      locationRequiredMark.classList.add('d-none');
+    }
+  }
+
+  document.getElementById('load_type_code').addEventListener('change', updateLoadTypeValidation);
 
   // ── Party logic ──────────────────────────────────────────────────────────
   let partiesData = [];
@@ -486,6 +517,21 @@
         if (!party_id) throw new Error('Please select a party.');
       }
 
+      // Validate loading type
+      const loadTypeCode = document.getElementById('load_type_code').value;
+      if (!loadTypeCode) throw new Error('Loading Type is required.');
+
+      // Validate preferred location based on loading type
+      const loadTypeSelect = document.getElementById('load_type_code');
+      const selectedOption = loadTypeSelect.options[loadTypeSelect.selectedIndex];
+      const selectedDesc = selectedOption ? selectedOption.textContent : '';
+      const isCompanyTransport = selectedDesc.toUpperCase().includes('COMPANY') && selectedDesc.toUpperCase().includes('TRANSPORT');
+      const preferredLocationCode = document.getElementById('preferred_location_code').value;
+
+      if (!isCompanyTransport && !preferredLocationCode) {
+        throw new Error('Preferred Loading Location is required for this loading type.');
+      }
+
       // Check total quantity against limit
       const totalQty = items.reduce((sum, item) => sum + item.order_quantity, 0);
       if (dealerLimit && dealerLimit.daily_limit > 0) {
@@ -502,8 +548,8 @@
       const payload = {
         items,
         party_id,
-        load_type_code:          document.getElementById('load_type_code').value          || null,
-        preferred_location_code: document.getElementById('preferred_location_code').value || null,
+        load_type_code:          loadTypeCode,
+        preferred_location_code: preferredLocationCode || null,
         driver_name:             document.getElementById('driver_name').value.trim()      || null,
         driver_phone:            document.getElementById('driver_phone').value.trim()     || null,
         vehicle_number:          document.getElementById('vehicle_number').value.trim()  || null,

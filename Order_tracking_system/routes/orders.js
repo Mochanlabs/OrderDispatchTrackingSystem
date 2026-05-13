@@ -100,21 +100,29 @@ function toOrderShape(row) {
   };
   if (row.dispatch_id) {
     order.dispatch = {
-      dispatch_id:       row.dispatch_id,
-      vehicle_no:        row.dispatch_vehicle_number || null,
-      driver_name:       row.dispatch_driver_name || null,
-      driver_phone:      row.dispatch_driver_phone || null,
-      bilty_number:      row.bilty_number || null,
-      dispatch_date:     row.dispatch_created_at || null,
-      dispatch_status:   null,
-      expected_delivery: null,
-      actual_delivery:   null,
-      image_url:         row.image_url || null,
-      image_type:        row.image_type || null,
-      image_original_size: row.image_original_size || null,
-      image_compressed_size: row.image_compressed_size || null,
-      image_uploaded_at: row.image_uploaded_at || null,
+      dispatch_id:                   row.dispatch_id,
+      vehicle_no:                    row.dispatch_vehicle_number || null,
+      driver_name:                   row.dispatch_driver_name || null,
+      driver_phone:                  row.dispatch_driver_phone || null,
+      bilty_number:                  row.bilty_number || null,
+      actual_loading_location_code:  row.actual_loading_location_code || null,
+      dispatch_date:                 row.dispatch_created_at || null,
+      dispatch_status:               null,
+      expected_delivery:             null,
+      actual_delivery:               null,
+      image_url:                     row.image_url || null,
+      image_type:                    row.image_type || null,
+      image_original_size:           row.image_original_size || null,
+      image_compressed_size:         row.image_compressed_size || null,
+      image_uploaded_at:             row.image_uploaded_at || null,
     };
+    // Also add dispatch fields at top level for direct access
+    order.dispatch_vehicle_number = row.dispatch_vehicle_number || null;
+    order.dispatch_driver_name = row.dispatch_driver_name || null;
+    order.dispatch_driver_phone = row.dispatch_driver_phone || null;
+    order.bilty_number = row.bilty_number || null;
+    order.actual_loading_location_code = row.actual_loading_location_code || null;
+    order.dispatch_created_at = row.dispatch_created_at || null;
   }
   return order;
 }

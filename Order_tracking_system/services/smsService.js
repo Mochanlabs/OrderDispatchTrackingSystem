@@ -235,4 +235,69 @@ async function sendAlert(phone, message) {
   throw new Error(`Unknown SMS_PROVIDER: ${PROVIDER}. Use 'dev', 'msg91', or 'twilio'`);
 }
 
-module.exports = { sendOtp, sendAlert };
+/**
+ * Send WhatsApp message via Twilio
+ * Used for admin notifications to dealers
+ */
+async function sendWhatsAppMessage(phone, message) {
+  if (PROVIDER === 'dev') {
+    console.log(`\n[WHATSAPP DEV MODE] ${phone}: ${message}\n`);
+    return { success: true, status: 'sent', message_sid: 'DEV_' + Date.now() };
+  }
+
+  if (PROVIDER === 'twilio') {
+    const accountSid = process.env.TWILIO_ACCOUNT_SID;
+    const authToken  = process.env.TWILIO_AUTH_TOKEN;
+    const from       = process.env.TWILIO_WHATSAPP_FROM || 'whatsapp:+14155238886'; // Twilio sandbox or your number
+
+    if (!accountSid || !authToken) {
+      throw new Error('TWILIO_ACCOUNT_SID and TWILIO_AUTH_TOKEN must be set in .env for WhatsApp');
+    }
+
+    const to = phone.startsWith('whatsapp:') ? phone : `whatsapp:+91${phone}`;
+    const postData = new URLSearchParams({
+      From: from,
+      To: to,
+      Body: message
+    }).toString();
+
+    return new Promise((resolve, reject) => {
+      const auth = Buffer.from(`${accountSid}:${authToken}`).toString('base64');
+      const req = https.request({
+        hostname: 'api.twilio.com',
+        path: `/2010-04-01/Accounts/${accountSid}/Messages.json`,
+        method: 'POST',
+        headers: {
+          'Authorization': `Basic ${auth}`,
+          'Content-Type': 'application/x-www-form-urlencoded',
+          'Content-Length': Buffer.byteLength(postData)
+        }
+      }, (res) => {
+        let data = '';
+        res.on('data', chunk => data += chunk);
+        res.on('end', () => {
+          try {
+            const parsed = JSON.parse(data);
+            if (parsed.sid) {
+              return resolve({
+                success: true,
+                status: 'sent',
+                message_sid: parsed.sid
+              });
+            }
+            return reject(new Error(`Twilio WhatsApp error: ${data}`));
+          } catch {
+            return reject(new Error(`Twilio WhatsApp bad response: ${data}`));
+          }
+        });
+      });
+      req.on('error', reject);
+      req.write(postData);
+      req.end();
+    });
+  }
+
+  throw new Error(`WhatsApp not supported for SMS_PROVIDER: ${PROVIDER}. Use 'dev' or 'twilio'`);
+}
+
+module.exports = { sendOtp, sendAlert, sendWhatsAppMessage };

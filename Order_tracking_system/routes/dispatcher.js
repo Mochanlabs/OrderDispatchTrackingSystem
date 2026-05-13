@@ -52,8 +52,23 @@ router.get('/dispatcher', ensureDispatcher, (req, res) => {
 // GET orders grouped for dispatcher view
 router.get('/api/dispatcher/orders', ensureDispatcher, async (req, res) => {
   try {
-    const { statuses } = req.query;
+    const { statuses, startDate, endDate } = req.query;
     const statusFilter = statuses ? statuses.split(',') : ['ORDER_PLACED', 'ACCEPTED'];
+
+    const conditions = ['o.order_status = ANY($1::text[])'];
+    const values = [statusFilter];
+    let paramIndex = 2;
+
+    if (startDate) {
+      conditions.push(`o.order_date >= $${paramIndex++}::timestamp`);
+      values.push(`${startDate}T00:00:00`);
+    }
+    if (endDate) {
+      conditions.push(`o.order_date <= $${paramIndex++}::timestamp`);
+      values.push(`${endDate}T23:59:59.999`);
+    }
+
+    const whereClause = conditions.join(' AND ');
 
     const result = await pool.query(`
       SELECT
@@ -106,9 +121,9 @@ router.get('/api/dispatcher/orders', ensureDispatcher, async (req, res) => {
       LEFT JOIN odts.code_reference pl ON pl.code_type = 'loading_location' AND pl.code = o.preferred_location_code
       LEFT JOIN odts.order_dispatch od ON od.order_id  = o.order_id
       LEFT JOIN odts.code_reference al ON al.code_type = 'loading_location' AND al.code = od.actual_loading_location_code
-      WHERE o.order_status = ANY($1::text[])
+      WHERE ${whereClause}
       ORDER BY o.dealer_id, o.order_date ASC
-    `, [statusFilter]);
+    `, values);
 
     const ordersWithPresignedUrls = await addPresignedUrlsToDispatcherOrders(result.rows);
     res.json(ordersWithPresignedUrls);

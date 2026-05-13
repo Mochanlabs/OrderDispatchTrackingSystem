@@ -13,6 +13,24 @@
 </nav>
 <div id="app-root"></div>
 
+<style>
+  .count-card {
+    cursor: pointer !important;
+    transition: all 0.2s ease !important;
+  }
+  .count-card:hover {
+    transform: translateY(-4px) !important;
+    box-shadow: 0 8px 16px rgba(0,0,0,0.15) !important;
+  }
+  .count-card.disabled {
+    cursor: default !important;
+  }
+  .count-card.disabled:hover {
+    transform: none !important;
+    box-shadow: 0 0.125rem 0.25rem rgba(0, 0, 0, 0.075) !important;
+  }
+</style>
+
 <script type="text/babel">
 const { useState, useEffect, useRef } = React;
 const IS_ADMIN = window._IS_ADMIN === true;
@@ -105,10 +123,14 @@ function OnHoldModal({ order, onConfirm, onClose, requireReason }) {
   );
 }
 
-function SummaryCard({ label, value, icon, borderColor }) {
+function SummaryCard({ label, value, icon, borderColor, onClick, isDisabled }) {
   return (
     <div className="col-6 col-md-3 mb-3">
-      <div className="card border-0 shadow-sm h-100" style={{ borderLeft: `4px solid ${borderColor}` }}>
+      <div
+        className={`card border-0 shadow-sm h-100 count-card ${isDisabled ? 'disabled' : ''}`}
+        style={{ borderLeft: `4px solid ${borderColor}`, cursor: isDisabled ? 'default' : 'pointer' }}
+        onClick={onClick}
+      >
         <div className="card-body d-flex align-items-center gap-3 py-3">
           <div style={{ fontSize: '2rem' }}>{icon}</div>
           <div>
@@ -570,6 +592,20 @@ function CreateForDealerModal({ onClose, onSaved, repeatFrom }) {
       setError('All products must have a value for bags');
       return;
     }
+    if (!loadType) {
+      setError('Loading Type is required');
+      return;
+    }
+
+    // Find the selected load type description to check if it's Company Transport
+    const selectedLoadType = loadTypes.find(lt => lt.code === loadType);
+    const isCompanyTransport = selectedLoadType && selectedLoadType.code_desc.toUpperCase().includes('COMPANY') && selectedLoadType.code_desc.toUpperCase().includes('TRANSPORT');
+
+    if (!isCompanyTransport && !prefLocation) {
+      setError('Preferred Loading Location is required for this loading type');
+      return;
+    }
+
     setSaving(true); setError('');
     try {
       const res = await fetch('/api/admin/orders/on-behalf', {
@@ -726,7 +762,9 @@ function CreateForDealerModal({ onClose, onSaved, repeatFrom }) {
               {/* Loading Type & Preferred Loading Location */}
               <div className="row g-3 mb-3">
                 <div className="col-md-6">
-                  <label className="form-label fw-semibold">Loading Type</label>
+                  <label className="form-label fw-semibold">
+                    Loading Type <span className="text-danger">*</span>
+                  </label>
                   <select className="form-select" value={loadType} onChange={(e) => {
                     setLoadType(e.target.value);
                     if (e.target.value !== 'SLF_DOT') {
@@ -740,7 +778,14 @@ function CreateForDealerModal({ onClose, onSaved, repeatFrom }) {
                   </select>
                 </div>
                 <div className="col-md-6">
-                  <label className="form-label fw-semibold">Preferred Loading Location</label>
+                  <label className="form-label fw-semibold">
+                    Preferred Loading Location
+                    {(() => {
+                      const selectedLoadType = loadTypes.find(lt => lt.code === loadType);
+                      const isCompanyTransport = selectedLoadType && selectedLoadType.code_desc.toUpperCase().includes('COMPANY') && selectedLoadType.code_desc.toUpperCase().includes('TRANSPORT');
+                      return !isCompanyTransport && loadType ? <span className="text-danger">*</span> : null;
+                    })()}
+                  </label>
                   <select className="form-select" value={prefLocation} onChange={(e) => setPrefLocation(e.target.value)}>
                     <option value="">Select Preferred Location</option>
                     {prefLocations.map(pl => <option key={pl.code} value={pl.code}>{pl.code_desc}</option>)}
@@ -780,6 +825,123 @@ function CreateForDealerModal({ onClose, onSaved, repeatFrom }) {
               </button>
             </div>
           </form>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// Drill-down modals for admin/office
+function StatusDealersModal({ orders, status, onSelectDealer, onClose }) {
+  const statusOrders = status === 'TOTAL' ? orders : orders.filter(o => o.order_status === status);
+  const dealerMap = {};
+
+  statusOrders.forEach(o => {
+    if (!dealerMap[o.dealer_id]) {
+      dealerMap[o.dealer_id] = {
+        dealer_id: o.dealer_id,
+        dealer_name: o.dealer_name,
+        count: 0,
+      };
+    }
+    dealerMap[o.dealer_id].count++;
+  });
+
+  const dealers = Object.values(dealerMap).sort((a, b) => b.count - a.count);
+  const statusConfig = STATUS_CONFIG[status] || { text: status, bg: '#6c757d', icon: '📊' };
+
+  return (
+    <div className="modal d-block" tabIndex="-1" style={{ background: 'rgba(0,0,0,0.55)' }}>
+      <div className="modal-dialog modal-dialog-centered">
+        <div className="modal-content">
+          <div className="modal-header" style={{ background: statusConfig.bg, color: statusConfig.tc }}>
+            <h5 className="modal-title">{statusConfig.icon} {statusConfig.text || 'Total'} Orders by Dealer</h5>
+            <button type="button" className="btn-close" style={{filter: 'brightness(0) invert(1)'}} onClick={onClose}></button>
+          </div>
+          <div className="modal-body" style={{ maxHeight: '70vh', overflowY: 'auto' }}>
+            {dealers.length === 0 ? (
+              <p className="text-muted text-center py-3">No orders found</p>
+            ) : (
+              <div className="list-group">
+                {dealers.map(dealer => (
+                  <button
+                    key={dealer.dealer_id}
+                    type="button"
+                    className="list-group-item list-group-item-action"
+                    onClick={() => onSelectDealer(dealer.dealer_id)}
+                  >
+                    <div className="d-flex justify-content-between align-items-start">
+                      <div className="text-start">
+                        <div className="fw-semibold">{dealer.dealer_name}</div>
+                      </div>
+                      <span className="badge bg-info">{dealer.count}</span>
+                    </div>
+                  </button>
+                ))}
+              </div>
+            )}
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function StatusOrdersModal({ orders, status, dealerId, onClose, onBack, onViewOrder }) {
+  const statusOrders = status === 'TOTAL'
+    ? orders.filter(o => o.dealer_id === dealerId)
+    : orders.filter(o => o.dealer_id === dealerId && o.order_status === status);
+
+  const dealerName = statusOrders[0]?.dealer_name || `Dealer #${dealerId}`;
+  const statusConfig = STATUS_CONFIG[status] || { text: status, bg: '#6c757d', icon: '📊' };
+
+  return (
+    <div className="modal d-block" tabIndex="-1" style={{ background: 'rgba(0,0,0,0.55)' }}>
+      <div className="modal-dialog modal-dialog-centered modal-lg">
+        <div className="modal-content">
+          <div className="modal-header d-flex align-items-center justify-content-between" style={{ background: statusConfig.bg, color: statusConfig.tc }}>
+            <div className="d-flex align-items-center gap-2">
+              {onBack && (
+                <button type="button" className="btn btn-sm btn-light" onClick={onBack} title="Go back to dealers">
+                  ← Back
+                </button>
+              )}
+              <h5 className="modal-title mb-0">{statusConfig.icon} {statusConfig.text || 'Total'} — {dealerName}</h5>
+            </div>
+            <button type="button" className="btn-close" style={{filter: 'brightness(0) invert(1)'}} onClick={onClose}></button>
+          </div>
+          <div className="modal-body" style={{ maxHeight: '70vh', overflowY: 'auto' }}>
+            {statusOrders.length === 0 ? (
+              <p className="text-muted text-center py-3">No orders found</p>
+            ) : (
+              <div className="space-y-3">
+                {statusOrders.map(o => (
+                  <div key={o.order_id} className="border rounded p-3" style={{ background: '#f8f9fa' }}>
+                    <div className="d-flex justify-content-between align-items-start mb-2">
+                      <div>
+                        <div className="fw-semibold">Order #{o.order_id}</div>
+                        <small className="text-muted">{formatDateTime(o.order_date)}</small>
+                      </div>
+                      <StatusBadge status={o.order_status} />
+                    </div>
+                    <div className="row g-2 small mb-2">
+                      <div className="col-6">
+                        <div className="text-muted">Product</div>
+                        <div>{o.product_name || '—'}</div>
+                      </div>
+                      <div className="col-6">
+                        <div className="text-muted">Party</div>
+                        <div>{o.party_name || '—'}</div>
+                      </div>
+                    </div>
+                    <button className="btn btn-sm btn-outline-primary" onClick={() => onViewOrder(o)}>
+                      👁️ View
+                    </button>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
         </div>
       </div>
     </div>
@@ -833,6 +995,11 @@ function App() {
   const [refreshing, setRefreshing] = useState(false);
   const esRef = useRef(null);
   const retryRef = useRef(null);
+
+  // Drill-down state for count cards (admin/office only)
+  const [selectedStatusForDrilldown, setSelectedStatusForDrilldown] = useState(null);
+  const [showStatusDealers, setShowStatusDealers] = useState(false);
+  const [selectedStatusDealerId, setSelectedStatusDealerId] = useState(null);
 
   const toggleSort = (col) => {
     if (sortCol === col) {
@@ -1038,12 +1205,71 @@ function App() {
         </div>
       )}
 
+      {/* Status Dealers Modal (drill-down) */}
+      {IS_ADMIN_OR_OFFICE && showStatusDealers && selectedStatusForDrilldown && (
+        <StatusDealersModal
+          orders={orders}
+          status={selectedStatusForDrilldown}
+          onSelectDealer={dealerId => {
+            setSelectedStatusDealerId(dealerId);
+            setShowStatusDealers(false);
+          }}
+          onClose={() => setShowStatusDealers(false)}
+        />
+      )}
+
+      {/* Status Orders Modal (drill-down) */}
+      {IS_ADMIN_OR_OFFICE && selectedStatusDealerId && selectedStatusForDrilldown && (
+        <StatusOrdersModal
+          orders={orders}
+          status={selectedStatusForDrilldown}
+          dealerId={selectedStatusDealerId}
+          onClose={() => setSelectedStatusDealerId(null)}
+          onBack={() => {
+            setSelectedStatusDealerId(null);
+            setShowStatusDealers(true);
+          }}
+          onViewOrder={order => {
+            setSelectedOrder(order);
+            setSelectedStatusDealerId(null);
+          }}
+        />
+      )}
+
       {/* Summary Cards */}
       <div className="row mb-2">
-        <SummaryCard label="Total Orders"  value={counts.total}       icon="📋" borderColor="#0d6efd" />
-        <SummaryCard label="Order Placed"  value={counts.orderPlaced} icon="🕐" borderColor="#fd7e14" />
-        <SummaryCard label="On Hold"       value={counts.onHold}      icon="⏸️" borderColor="#e57373" />
-        <SummaryCard label="Dispatched"    value={counts.dispatched}  icon="📦" borderColor="#198754" />
+        <SummaryCard
+          label="Total Orders"
+          value={counts.total}
+          icon="📋"
+          borderColor="#0d6efd"
+          isDisabled={!IS_ADMIN_OR_OFFICE || counts.total === 0}
+          onClick={() => IS_ADMIN_OR_OFFICE && counts.total > 0 && (setSelectedStatusForDrilldown('TOTAL'), setShowStatusDealers(true))}
+        />
+        <SummaryCard
+          label="Order Placed"
+          value={counts.orderPlaced}
+          icon="🕐"
+          borderColor="#fd7e14"
+          isDisabled={!IS_ADMIN_OR_OFFICE || counts.orderPlaced === 0}
+          onClick={() => IS_ADMIN_OR_OFFICE && counts.orderPlaced > 0 && (setSelectedStatusForDrilldown('ORDER_PLACED'), setShowStatusDealers(true))}
+        />
+        <SummaryCard
+          label="On Hold"
+          value={counts.onHold}
+          icon="⏸️"
+          borderColor="#e57373"
+          isDisabled={!IS_ADMIN_OR_OFFICE || counts.onHold === 0}
+          onClick={() => IS_ADMIN_OR_OFFICE && counts.onHold > 0 && (setSelectedStatusForDrilldown('ON_HOLD'), setShowStatusDealers(true))}
+        />
+        <SummaryCard
+          label="Dispatched"
+          value={counts.dispatched}
+          icon="📦"
+          borderColor="#198754"
+          isDisabled={!IS_ADMIN_OR_OFFICE || counts.dispatched === 0}
+          onClick={() => IS_ADMIN_OR_OFFICE && counts.dispatched > 0 && (setSelectedStatusForDrilldown('DISPATCHED'), setShowStatusDealers(true))}
+        />
         {!IS_ADMIN && dealerLimit && dealerLimit.daily_limit !== null && (
           <div className="col-6 col-md-3 mb-3">
             <div className="card border-0 shadow-sm h-100" style={{ borderLeft: `4px solid ${dealerLimit.daily_limit > 0 && dealerLimit.percentage >= 80 ? '#dc3545' : '#198754'}` }}>
