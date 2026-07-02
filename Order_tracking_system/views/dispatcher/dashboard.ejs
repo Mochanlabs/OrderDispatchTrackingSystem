@@ -307,9 +307,9 @@ function DispatchModal({ order, loadingLocations, onSubmit, onClose, notify, onR
     }
   }, [loadingLocations]);
 
-  // Fetch warehouse stock when product is selected
+  // Fetch warehouse stock when product or warehouse is selected
   useEffect(() => {
-    if (dispatchItemForm.product_id && dispatchItemForm.actual_loading_location_code && isExistingDispatch) {
+    if (dispatchItemForm.product_id && dispatchItemForm.actual_loading_location_code) {
       // Fetch warehouse stock for the selected product from warehouse_inventory
       // Join warehouse_master (actual_loading_location_code = warehouse_id) with warehouse_inventory by product_id
       fetch(`/api/warehouse-inventory`)
@@ -338,7 +338,7 @@ function DispatchModal({ order, loadingLocations, onSubmit, onClose, notify, onR
           setDispatchItemForm(f => ({...f, warehouse_available_qty: '—'}));
         });
     }
-  }, [dispatchItemForm.product_id, dispatchItemForm.actual_loading_location_code, isExistingDispatch]);
+  }, [dispatchItemForm.product_id, dispatchItemForm.actual_loading_location_code]);
 
   // Handle creating new dispatch item
   const handleCreateDispatchItem = async (e) => {
@@ -1163,92 +1163,12 @@ function DispatchModal({ order, loadingLocations, onSubmit, onClose, notify, onR
               </div>
             )}
 
-            {/* Dispatch form - only show for initial dispatch */}
-            {!isExistingDispatch && (
-              <>
-                <h6 className="fw-bold text-muted text-uppercase small mb-3">Enter Dispatch Details</h6>
-                {err && !skipUploadConfirm && <div className="alert alert-danger py-2 mb-3">{err}</div>}
-
-                <div className="row g-3">
-                  <div className="col-md-6">
-                    <label className="form-label fw-semibold">
-                      Vehicle Number <span className="text-danger">*</span>
-                    </label>
-                    <input
-                      className="form-control text-uppercase"
-                      placeholder="e.g. UP32AB1234"
-                      value={form.vehicle_number}
-                      onChange={e => set('vehicle_number', e.target.value.toUpperCase())}
-                    />
-                  </div>
-                  <div className="col-md-6">
-                    <label className="form-label fw-semibold">
-                      Bilty Number <span className="text-danger">*</span>
-                    </label>
-                    <input
-                      className="form-control"
-                      placeholder="Transport receipt / bilty number"
-                      value={form.bilty_number}
-                      onChange={e => set('bilty_number', e.target.value)}
-                    />
-                  </div>
-                  <div className="col-md-6">
-                    <label className="form-label fw-semibold">Driver Name</label>
-                    <input
-                      className="form-control"
-                      placeholder="Driver full name (optional)"
-                      value={form.driver_name}
-                      onChange={e => set('driver_name', e.target.value)}
-                    />
-                  </div>
-                  <div className="col-md-6">
-                    <label className="form-label fw-semibold">
-                      Driver Phone <span className="text-danger">*</span> <span className="text-muted fw-normal small">(10 digits only)</span>
-                    </label>
-                    <input
-                      type="tel"
-                      className={`form-control ${form.driver_phone && form.driver_phone.length !== 10 ? 'is-invalid' : ''}`}
-                      placeholder="10-digit mobile number"
-                      value={form.driver_phone}
-                      onChange={e => set('driver_phone', validatePhone(e.target.value))}
-                      pattern="[0-9]{10}"
-                      title="Driver phone must be exactly 10 digits (0-9 only)"
-                      maxLength="10"
-                    />
-                    {form.driver_phone && form.driver_phone.length !== 10 && (
-                      <small className="text-danger d-block mt-1">⚠️ Must be exactly 10 digits</small>
-                    )}
-                  </div>
-                  <div className="col-12">
-                    <label className="form-label fw-semibold">
-                      Actual Loading Location <span className="text-danger">*</span>
-                    </label>
-                    <select
-                      className="form-select"
-                      value={form.actual_loading_location_code}
-                      onChange={e => set('actual_loading_location_code', e.target.value)}
-                      disabled={loadingLocations.length === 1}
-                    >
-                      {loadingLocations.length !== 1 && <option value="">-- Select Warehouse --</option>}
-                      {loadingLocations.map(w => (
-                        <option key={w.warehouse_id} value={w.warehouse_id}>
-                          {w.warehouse_name}
-                        </option>
-                      ))}
-                    </select>
-                  </div>
-                </div>
-              </>
-            )}
+            {/* Dispatch form - removed (use ADD DISPATCH ITEM form instead) */}
             {isExistingDispatch && err && <div className="alert alert-danger py-2 mb-3">{err}</div>}
           </div>
 
           <div className="modal-footer">
-            <button className="btn btn-secondary" onClick={onClose}>Cancel</button>
-            <button className="btn btn-success" disabled={saving} onClick={submit}>
-              {saving && <span className="spinner-border spinner-border-sm me-1"></span>}
-              {isExistingDispatch ? '💾 Save Changes' : '🚛 Confirm Dispatch'}
-            </button>
+            <button className="btn btn-secondary" onClick={onClose}>Close</button>
           </div>
 
         </div>
