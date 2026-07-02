@@ -1997,8 +1997,8 @@ function App() {
                             </button>
                           )}
 
-                          {/* Unhold on ON_HOLD */}
-                          {o.order_status === 'ON_HOLD' && (
+                          {/* Dealer: Unhold on ON_HOLD */}
+                          {!IS_ADMIN_OR_OFFICE && !IS_DISPATCHER && o.order_status === 'ON_HOLD' && (
                             <button className="btn btn-sm btn-outline-warning me-1" onClick={() => changeStatus(o.order_id, 'ORDER_PLACED')}>
                               ⏸️ Unhold
                             </button>
@@ -2011,8 +2011,8 @@ function App() {
                             </button>
                           )}
 
-                          {/* Admin/Office: Unhold on ON_HOLD (admin/office held) */}
-                          {IS_ADMIN_OR_OFFICE && o.order_status === 'ON_HOLD' && o.on_hold_by_role !== 'DEALER' && (
+                          {/* Admin/Office: Unhold on ON_HOLD */}
+                          {IS_ADMIN_OR_OFFICE && o.order_status === 'ON_HOLD' && (
                             <button className="btn btn-sm btn-outline-warning me-1" onClick={() => changeStatus(o.order_id, 'ORDER_PLACED')}>
                               ⏸️ Unhold
                             </button>
