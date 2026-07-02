@@ -61,7 +61,6 @@ const STATUS_CONFIG = {
   ON_HOLD:               { text: 'On Hold',                icon: '⏸️', bg: '#e57373', tc: '#fff' },
   FULLY_DISPATCHED:      { text: 'Fully Dispatched',       icon: '✅', bg: '#198754', tc: '#fff' },
   PARTIALLY_DISPATCHED:  { text: 'Partially Dispatched',   icon: '📦', bg: '#fd7e14', tc: '#fff' },
-  DISPATCH_ON_HOLD:      { text: 'Dispatch on Hold',       icon: '⏸️', bg: '#e57373', tc: '#fff' },
   CANCELLED:             { text: 'Cancelled',              icon: '❌', bg: '#6c757d', tc: '#fff' },
 };
 
@@ -201,9 +200,9 @@ function ReceiptPreviewModal({ url, onClose }) {
 
 function DispatchModal({ order, loadingLocations, onSubmit, onClose, notify, onRefresh }) {
   // isExistingDispatch: order is already in dispatch state (only edit quantities)
-  // Includes: DISPATCHED, PARTIALLY_DISPATCHED, DISPATCH_ON_HOLD
+  // Includes: PARTIALLY_DISPATCHED, FULLY_DISPATCHED
   // isInitialDispatch: order not yet dispatched (fill in all dispatch details + quantities)
-  const isExistingDispatch = ['PARTIALLY_DISPATCHED', 'DISPATCH_ON_HOLD', 'FULLY_DISPATCHED'].includes(order.order_status) || !!order.dispatch_id;
+  const isExistingDispatch = ['PARTIALLY_DISPATCHED', 'FULLY_DISPATCHED'].includes(order.order_status) || !!order.dispatch_id;
   const items = parseItems(order);
   const totalOrderBags = items.reduce((s, i) => s + (parseInt(i.order_bags || 0)), 0);
   const totalOrderQty = items.reduce((s, i) => s + parseFloat(i.order_quantity || 0), 0);
@@ -1715,7 +1714,7 @@ function DispatchedDealersModal({ orders, onSelectDealer, onClose, statusFilter 
   // Filter by specific status or show all dispatch-related statuses
   const dispatchedOrders = statusFilter
     ? orders.filter(o => o.order_status === statusFilter)
-    : orders.filter(o => ['PARTIALLY_DISPATCHED', 'DISPATCH_ON_HOLD', 'FULLY_DISPATCHED'].includes(o.order_status));
+    : orders.filter(o => ['PARTIALLY_DISPATCHED', 'FULLY_DISPATCHED'].includes(o.order_status));
   const dealerMap = {};
 
   dispatchedOrders.forEach(o => {
@@ -1782,7 +1781,7 @@ function DealerDispatchedOrdersModal({ orders, dealerId, onClose, onBack, onView
   const [dispatchItemsMap, setDispatchItemsMap] = useState({});
 
   const dispatchedOrders = orders
-    .filter(o => o.dealer_id === dealerId && (statusFilter ? o.order_status === statusFilter : ['PARTIALLY_DISPATCHED', 'DISPATCH_ON_HOLD', 'FULLY_DISPATCHED'].includes(o.order_status)))
+    .filter(o => o.dealer_id === dealerId && (statusFilter ? o.order_status === statusFilter : ['PARTIALLY_DISPATCHED', 'FULLY_DISPATCHED'].includes(o.order_status)))
     .sort((a, b) => new Date(b.dispatch_created_at) - new Date(a.dispatch_created_at));
 
   // Fetch dispatch items for all orders
@@ -1906,7 +1905,7 @@ function DealerDispatchedOrdersModal({ orders, dealerId, onClose, onBack, onView
                           👁️ View
                         </button>
                       )}
-                      {!readOnlyMode && onDispatch && ['PARTIALLY_DISPATCHED', 'DISPATCH_ON_HOLD'].includes(order.order_status) && (
+                      {!readOnlyMode && onDispatch && ['PARTIALLY_DISPATCHED'].includes(order.order_status) && (
                         <button className="btn btn-sm btn-warning me-1" onClick={() => onDispatch(order)}>
                           ✏️ Edit Dispatch
                         </button>
@@ -1982,7 +1981,7 @@ function OrderRow({ order, onAccept, onDispatch, onView, isOrderOverdue }) {
                 🚛 Dispatch
               </button>
             )}
-            {['PARTIALLY_DISPATCHED', 'DISPATCH_ON_HOLD'].includes(order.order_status) && (
+            {['PARTIALLY_DISPATCHED'].includes(order.order_status) && (
               <>
                 <button className="btn btn-sm btn-warning me-1" onClick={() => onDispatch(order)}>
                   ✏️ Edit Dispatch
@@ -2308,7 +2307,7 @@ function TotalDealerOrdersModal({ orders, dealerId, onClose, onBack, onView, onA
                               🚛 Dispatch
                             </button>
                           )}
-                          {['PARTIALLY_DISPATCHED', 'DISPATCH_ON_HOLD'].includes(order.order_status) && (
+                          {['PARTIALLY_DISPATCHED'].includes(order.order_status) && (
                             <button className="btn btn-sm btn-warning" onClick={() => onDispatch(order)}>
                               ✏️ Edit Dispatch
                             </button>
@@ -2333,7 +2332,7 @@ function DealerGroup({ orders, onAccept, onDispatch, onView, isOrderOverdue }) {
   const placedCount    = orders.filter(o => o.order_status === 'ORDER_PLACED').length;
   const acceptedCount  = orders.filter(o => o.order_status === 'ACCEPTED').length;
   const onHoldCount    = orders.filter(o => o.order_status === 'ON_HOLD').length;
-  const dispatchedCount = orders.filter(o => ['PARTIALLY_DISPATCHED', 'DISPATCH_ON_HOLD', 'FULLY_DISPATCHED'].includes(o.order_status)).length;
+  const dispatchedCount = orders.filter(o => ['PARTIALLY_DISPATCHED', 'FULLY_DISPATCHED'].includes(o.order_status)).length;
 
   const first       = orders[0];
   const displayName = first.dealer_login_name || first.dealer_company_name || first.dealer_name || `Dealer #${first.dealer_id}`;
@@ -2463,7 +2462,7 @@ function App() {
   };
 
   const isOrderOverdue = (order) => {
-    if (['PARTIALLY_DISPATCHED', 'DISPATCH_ON_HOLD', 'FULLY_DISPATCHED'].includes(order.order_status)) return false; // Not overdue if in dispatch state
+    if (['PARTIALLY_DISPATCHED', 'FULLY_DISPATCHED'].includes(order.order_status)) return false; // Not overdue if in dispatch state
     const orderDate = new Date(order.order_date);
     const now = new Date();
     const daysDiff = Math.floor((now - orderDate) / (1000 * 60 * 60 * 24));
@@ -2507,7 +2506,7 @@ function App() {
     const statuses = ['ORDER_PLACED', 'ACCEPTED'];
     if (showDispatched) {
       // When toggle ON, include all dispatch-related statuses
-      statuses.push('PARTIALLY_DISPATCHED', 'DISPATCH_ON_HOLD', 'FULLY_DISPATCHED');
+      statuses.push('PARTIALLY_DISPATCHED', 'FULLY_DISPATCHED');
     }
     if (showOnHold)     statuses.push('ON_HOLD');
     try {

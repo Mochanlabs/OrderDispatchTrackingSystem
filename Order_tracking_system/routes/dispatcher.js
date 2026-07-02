@@ -380,16 +380,18 @@ router.post('/api/dispatcher/orders/:id/dispatch', ensureDispatcher, async (req,
       return res.status(400).json({ error: 'Dispatch record not found. Order must be ACCEPTED first.' });
     }
 
-    // Update order status to DISPATCHED
+    // Calculate and update order status based on dispatch items (PARTIALLY_DISPATCHED or FULLY_DISPATCHED)
+    const newStatus = await calculateOrderStatus(orderId, pool);
+
     await pool.query(
       `UPDATE odts.dealer_orders
-          SET order_status = 'DISPATCHED', updated_by = $1, updated_at = NOW()
-        WHERE order_id = $2`,
-      [userId, orderId]
+          SET order_status = $1, updated_by = $2, updated_at = NOW()
+        WHERE order_id = $3`,
+      [newStatus, userId, orderId]
     );
 
-    broadcastOrderUpdate({ orderId, newStatus: 'DISPATCHED', updatedBy: userId });
-    res.json({ success: true });
+    broadcastOrderUpdate({ orderId, newStatus, updatedBy: userId });
+    res.json({ success: true, order_status: newStatus });
   } catch (e) {
     console.error('[Dispatcher] dispatch error:', e.message);
     res.status(500).json({ error: e.message });
@@ -647,12 +649,13 @@ async function calculateOrderStatus(orderId, pool) {
 
     // Determine status based on dispatch progress
     let newStatus;
-    if (totalDispatchBags === 0) {
-      newStatus = 'DISPATCH_ON_HOLD'; // No items dispatched yet
-    } else if (totalOrderBags === totalDispatchBags) {
+    if (totalOrderBags === totalDispatchBags && totalDispatchBags > 0) {
       newStatus = 'FULLY_DISPATCHED'; // All items dispatched
     } else if (totalDispatchBags > 0 && totalDispatchBags < totalOrderBags) {
       newStatus = 'PARTIALLY_DISPATCHED'; // Some items dispatched
+    } else {
+      // If no items dispatched yet, keep current status (ACCEPTED or DISPATCHED)
+      return null;
     }
 
     return newStatus;

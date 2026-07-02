@@ -72,7 +72,6 @@ const STATUS_CONFIG = {
   ON_HOLD:              { text: 'On Hold',              icon: '⏸️', bg: '#e57373', tc: '#fff' },
   FULLY_DISPATCHED:     { text: 'Fully Dispatched',     icon: '✅', bg: '#198754', tc: '#fff' },
   PARTIALLY_DISPATCHED: { text: 'Partially Dispatched', icon: '📦', bg: '#fd7e14', tc: '#fff' },
-  DISPATCH_ON_HOLD:     { text: 'Dispatch on Hold',     icon: '⏸️', bg: '#e57373', tc: '#fff' },
   CANCELLED:            { text: 'Cancelled',            icon: '❌', bg: '#6c757d', tc: '#fff' },
 };
 
@@ -1540,7 +1539,7 @@ function App() {
     total:       orders.length,
     orderPlaced: orders.filter(o => o.order_status === 'ORDER_PLACED').length,
     onHold:      orders.filter(o => o.order_status === 'ON_HOLD').length,
-    dispatched:  orders.filter(o => ['PARTIALLY_DISPATCHED', 'DISPATCH_ON_HOLD', 'FULLY_DISPATCHED'].includes(o.order_status)).length,
+    dispatched:  orders.filter(o => ['PARTIALLY_DISPATCHED', 'FULLY_DISPATCHED'].includes(o.order_status)).length,
   };
 
   const filtered = orders.filter(o => {
@@ -1550,7 +1549,7 @@ function App() {
     const matchStatus = statusFilter === 'ALL' || o.order_status === statusFilter;
     // When toggle is OFF, filter OUT that category. When ON, show that category.
     const matchOnHold = showOnHold || o.order_status !== 'ON_HOLD';
-    const isDispatchStatus = ['PARTIALLY_DISPATCHED', 'FULLY_DISPATCHED', 'DISPATCH_ON_HOLD'].includes(o.order_status);
+    const isDispatchStatus = ['PARTIALLY_DISPATCHED', 'FULLY_DISPATCHED'].includes(o.order_status);
     const matchDispatched = showDispatched || !isDispatchStatus;
     return matchSearch && matchDealer && matchStatus && matchOnHold && matchDispatched;
   });
@@ -2019,8 +2018,8 @@ function App() {
                             </button>
                           )}
 
-                          {/* Admin/Office/Dispatcher: Edit Dispatch only on DISPATCH_ON_HOLD or PARTIALLY_DISPATCHED */}
-                          {(IS_ADMIN_OR_OFFICE || IS_DISPATCHER) && ['DISPATCH_ON_HOLD', 'PARTIALLY_DISPATCHED'].includes(o.order_status) && (
+                          {/* Admin/Office/Dispatcher: Edit Dispatch only on PARTIALLY_DISPATCHED */}
+                          {(IS_ADMIN_OR_OFFICE || IS_DISPATCHER) && ['PARTIALLY_DISPATCHED'].includes(o.order_status) && (
                             <button className="btn btn-sm btn-warning me-1" onClick={() => setSelectedOrder(o)}>
                               ✏️ Edit Dispatch
                             </button>
