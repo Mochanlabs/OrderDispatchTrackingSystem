@@ -874,6 +874,8 @@ router.post('/api/orders/:orderId/dispatch-items', ensureAuth, async (req, res) 
            WHERE order_id = $3`,
           [newStatus, req.session.user.id, orderId]
         );
+        // Notify all clients of the status change
+        broadcastOrderUpdate({ orderId, newStatus, updatedBy: req.session.user.id });
       }
 
       res.json(result.rows[0]);
