@@ -920,8 +920,8 @@ function DispatchModal({ order, loadingLocations, onSubmit, onClose, notify, onR
             </div>
             {/* End of Dealer Orders Information Section */}
 
-            {/* Dispatch Orders Grid - show at top for existing dispatch */}
-            {isExistingDispatch && (
+            {/* Dispatch Orders Grid - show for all dispatches */}
+            {(
               <div className="mb-4 p-3 border rounded" style={{ background: '#f5f9ff', borderColor: '#b0d4f1' }}>
                 <div className="text-muted small mb-3 fw-semibold">🚛 Dispatched orders ({dispatchItems.filter(i => i.dispatch_bags).length})</div>
                 <div style={{ maxHeight: '250px', overflowY: 'auto', borderRadius: '4px', border: '1px solid #dee2e6' }}>
@@ -980,7 +980,7 @@ function DispatchModal({ order, loadingLocations, onSubmit, onClose, notify, onR
             )}
 
             {/* Dispatch Orders - Add Dispatch Items */}
-            {isExistingDispatch && (
+            {(
               <div className="mb-4 p-3 border rounded" style={{ background: '#f0f8ff', borderColor: '#b0d4f1' }}>
                 <h6 className="fw-bold text-primary text-uppercase small mb-3">Dispatched orders (Editable)</h6>
                 <div className="row g-3">

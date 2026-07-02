@@ -383,15 +383,19 @@ router.post('/api/dispatcher/orders/:id/dispatch', ensureDispatcher, async (req,
     // Calculate and update order status based on dispatch items (PARTIALLY_DISPATCHED or FULLY_DISPATCHED)
     const newStatus = await calculateOrderStatus(orderId, pool);
 
-    await pool.query(
-      `UPDATE odts.dealer_orders
-          SET order_status = $1, updated_by = $2, updated_at = NOW()
-        WHERE order_id = $3`,
-      [newStatus, userId, orderId]
-    );
+    // Only update status if dispatch items exist (newStatus is not null)
+    // If no items dispatched yet, status remains ACCEPTED
+    if (newStatus) {
+      await pool.query(
+        `UPDATE odts.dealer_orders
+            SET order_status = $1, updated_by = $2, updated_at = NOW()
+          WHERE order_id = $3`,
+        [newStatus, userId, orderId]
+      );
+      broadcastOrderUpdate({ orderId, newStatus, updatedBy: userId });
+    }
 
-    broadcastOrderUpdate({ orderId, newStatus, updatedBy: userId });
-    res.json({ success: true, order_status: newStatus });
+    res.json({ success: true, order_status: newStatus || 'ACCEPTED' });
   } catch (e) {
     console.error('[Dispatcher] dispatch error:', e.message);
     res.status(500).json({ error: e.message });
